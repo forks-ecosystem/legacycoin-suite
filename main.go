@@ -1,0 +1,565 @@
+package main
+
+import (
+	"bytes"
+	"crypto/sha256"
+	_ "embed"
+	"encoding/binary"
+	"encoding/hex"
+	"encoding/json"
+	"flag"
+	"fmt"
+	"log"
+	"math"
+	"math/big"
+	"net"
+	"net/http"
+	"os"
+	"os/signal"
+	"runtime"
+	"strconv"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"syscall"
+	"time"
+
+	"legacycoin-miner/crypto"
+)
+
+//go:embed static/dashboard.html
+var dashboardHTML string
+
+type StratumMessage struct {
+	ID     any           `json:"id"`
+	Method string        `json:"method,omitempty"`
+	Params []interface{} `json:"params,omitempty"`
+}
+
+type MiningJob struct {
+	JobID     string
+	PrevHash  string
+	Coinbase1 string
+	Coinbase2 string
+	Branches  []string
+	Version   string
+	NBits     string
+	NTime     string
+	CleanJobs bool
+	submitted atomic.Bool
+}
+
+type Miner struct {
+	poolAddress   string
+	walletAddress string
+	workerName    string
+	workers       int
+
+	conn    net.Conn
+	encoder *json.Encoder
+	decoder *json.Decoder
+
+	currentJob  atomic.Value
+	extranonce1 string
+
+	shareDifficulty float64
+
+	stats  MiningStats
+	quit   chan struct{}
+	sendMu sync.Mutex
+}
+
+type MiningStats struct {
+	AcceptedShares int64
+	TotalHashes    uint64
+	HashRate       int64
+	StartTime      time.Time
+	lastHashTime   time.Time
+}
+
+func main() {
+	poolAddr := flag.String("pool", "stratum+tcp://127.0.0.1:3333", "Pool address")
+	wallet := flag.String("wallet", "", "Wallet address")
+	worker := flag.String("worker", "cpu", "Worker name")
+	threads := flag.Int("workers", runtime.NumCPU(), "Threads")
+	webAddr := flag.String("web", ":3002", "Web server address")
+
+	flag.Parse()
+
+	if *wallet == "" {
+		log.Fatal("Usage: -wallet=YOUR_WALLET_ADDRESS")
+	}
+
+	miner := NewMiner(*poolAddr, *wallet, *worker, *threads)
+
+	http.HandleFunc("/api/stats", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(miner.Stats())
+	})
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Write([]byte(dashboardHTML))
+	})
+
+	go miner.Run()
+
+	log.Printf("Web UI: http://0.0.0.0%s", *webAddr)
+	if err := http.ListenAndServe(*webAddr, nil); err != nil {
+		log.Fatalf("Web server error: %v", err)
+	}
+}
+
+func (m *Miner) Stats() map[string]interface{} {
+	return map[string]interface{}{
+		"poolAddress":    m.poolAddress,
+		"walletAddress":  m.walletAddress,
+		"workerName":     m.workerName,
+		"workers":        m.workers,
+		"acceptedShares": atomic.LoadInt64(&m.stats.AcceptedShares),
+		"totalHashes":    atomic.LoadUint64(&m.stats.TotalHashes),
+		"hashRate":       float64(atomic.LoadInt64(&m.stats.HashRate)),
+		"uptimeSeconds":  time.Since(m.stats.StartTime).Seconds(),
+	}
+}
+
+func NewMiner(pool, wallet, worker string, workers int) *Miner {
+	m := &Miner{
+		poolAddress:   pool,
+		walletAddress: wallet,
+		workerName:    worker,
+		workers:       workers,
+		quit:          make(chan struct{}),
+		stats:         MiningStats{StartTime: time.Now(), lastHashTime: time.Now()},
+	}
+	m.currentJob.Store((*MiningJob)(nil))
+	return m
+}
+
+func (m *Miner) Run() {
+	log.Printf("Legacycoin Miner | Workers: %d", m.workers)
+
+	sig := make(chan os.Signal, 1)
+	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		<-sig
+		log.Println("Shutting down...")
+		close(m.quit)
+		m.sendMu.Lock()
+		if m.conn != nil {
+			m.conn.Close()
+		}
+		m.sendMu.Unlock()
+	}()
+
+	go m.reportStats()
+	go m.pingLoop()
+
+	for i := 0; i < m.workers; i++ {
+		go m.worker(i)
+	}
+
+	for {
+		if err := m.connect(); err != nil {
+			log.Printf("Connect error: %v", err)
+			select {
+			case <-time.After(5 * time.Second):
+				continue
+			case <-m.quit:
+				return
+			}
+		}
+
+		m.subscribe()
+		m.authorize()
+
+		m.handleMessages()
+
+		m.sendMu.Lock()
+		if m.conn != nil {
+			m.conn.Close()
+			m.conn = nil
+		}
+		m.sendMu.Unlock()
+		m.currentJob.Store((*MiningJob)(nil))
+
+		select {
+		case <-m.quit:
+			return
+		default:
+		}
+
+		log.Println("Disconnected, reconnecting in 5s...")
+		select {
+		case <-time.After(5 * time.Second):
+		case <-m.quit:
+			return
+		}
+	}
+}
+
+// ====================== NETWORK ======================
+
+func (m *Miner) connect() error {
+	m.sendMu.Lock()
+	defer m.sendMu.Unlock()
+
+	addr := strings.TrimPrefix(m.poolAddress, "stratum+tcp://")
+	if !strings.Contains(addr, ":") {
+		addr += ":3333"
+	}
+	conn, err := net.Dial("tcp", addr)
+	if err != nil {
+		return err
+	}
+	if m.conn != nil {
+		m.conn.Close()
+	}
+	m.conn = conn
+	m.encoder = json.NewEncoder(conn)
+	m.decoder = json.NewDecoder(conn)
+	return nil
+}
+
+func (m *Miner) subscribe() error {
+	return m.send(StratumMessage{ID: 1, Method: "mining.subscribe", Params: []interface{}{"legacycoin-miner/1.0"}})
+}
+
+func (m *Miner) authorize() error {
+	user := fmt.Sprintf("%s.%s", m.walletAddress, m.workerName)
+	return m.send(StratumMessage{ID: 2, Method: "mining.authorize", Params: []interface{}{user, "x"}})
+}
+
+func (m *Miner) send(msg interface{}) error {
+	m.sendMu.Lock()
+	defer m.sendMu.Unlock()
+	return m.encoder.Encode(msg)
+}
+
+// ====================== MINING ======================
+
+func (m *Miner) worker(id int) {
+	var localJob *MiningJob
+
+	for {
+		select {
+		case <-m.quit:
+			return
+		default:
+		}
+
+		job := m.currentJob.Load().(*MiningJob)
+		if job == nil || job == localJob {
+			time.Sleep(5 * time.Millisecond)
+			continue
+		}
+
+		localJob = job
+		m.mineJob(id, job)
+	}
+}
+
+const poolPersonalization = "LegacyCoinPoW"
+
+func (m *Miner) mineJob(workerID int, job *MiningJob) {
+	extranonce2 := fmt.Sprintf("%08x", workerID)
+	coinbase := m.buildCoinbase(job, extranonce2)
+	merkleRoot := m.calculateMerkleRoot(coinbase, job.Branches)
+	shareTarget := TargetForDifficulty(m.shareDifficulty)
+	netTarget := CompactToBig(bitsToCompact(job.NBits))
+	version, _ := hex.DecodeString(job.Version)
+	prevHash, _ := hex.DecodeString(job.PrevHash)
+	nbits, _ := hex.DecodeString(job.NBits)
+
+	for nonce := uint32(workerID); ; nonce += uint32(m.workers) {
+		select {
+		case <-m.quit:
+			return
+		default:
+		}
+
+		if m.currentJob.Load().(*MiningJob) != job {
+			return
+		}
+
+		atomic.AddUint64(&m.stats.TotalHashes, 1)
+
+		ntime := uint32(time.Now().Unix())
+		ntimeBytes := make([]byte, 4)
+		binary.LittleEndian.PutUint32(ntimeBytes, ntime)
+
+		header := buildHeader(version, prevHash, merkleRoot, ntimeBytes, nbits, nonce)
+		hash := crypto.YespowerHash(poolPersonalization, header)
+
+		if HashMeetsTarget(hash[:], shareTarget) {
+			m.submitShare(job, extranonce2, ntime, nonce)
+
+			if HashMeetsTarget(hash[:], netTarget) {
+//				log.Printf("BLOCK FOUND by worker %d hash=%x header=%x merkle=%x nbits=%x nonce=%d ntime=%d en2=%s", workerID, hash[:], header, merkleRoot, nbits, nonce, ntime, extranonce2)
+    // Лог в формате майнера (little-endian)
+    log.Printf("BLOCK FOUND by worker %d", workerID)
+    log.Printf("  hash (LE): %x", hash[:])
+    // Лог в формате эксплорера (big-endian) - для проверки
+    log.Printf("  hash (BE): %x", reverseBytes(hash[:]))
+    log.Printf("  header: %x", header)
+    log.Printf("  nonce: %d", nonce)
+			}
+		}
+
+		if nonce%4096 == 0 && nonce > 0 {
+			m.updateHashRate()
+		}
+	}
+}
+
+// ====================== CRYPTO HELPERS ======================
+
+func (m *Miner) buildCoinbase(job *MiningJob, en2 string) []byte {
+	c1, _ := hex.DecodeString(job.Coinbase1)
+	e1, _ := hex.DecodeString(m.extranonce1)
+	e2, _ := hex.DecodeString(en2)
+	c2, _ := hex.DecodeString(job.Coinbase2)
+	b := append(c1, e1...)
+	b = append(b, e2...)
+	b = append(b, c2...)
+	return b
+}
+
+func (m *Miner) calculateMerkleRoot(coinbase []byte, branches []string) []byte {
+	root := doubleHashB(coinbase)
+	for _, br := range branches {
+		b, _ := hex.DecodeString(br)
+		root = doubleHashB(append(root, b...))
+	}
+	return root
+}
+
+func buildHeader(v, prev, merkle, ntime, nbits []byte, nonce uint32) []byte {
+	buf := new(bytes.Buffer)
+	buf.Write(reverseBytes(v))
+	buf.Write(reverseBytes(prev))
+	buf.Write(merkle)
+	buf.Write(ntime)
+	buf.Write(reverseBytes(nbits))
+
+	nb := make([]byte, 4)
+	binary.LittleEndian.PutUint32(nb, nonce)
+	buf.Write(nb)
+	return buf.Bytes()
+}
+
+func doubleHashB(data []byte) []byte {
+	h1 := sha256.Sum256(data)
+	h2 := sha256.Sum256(h1[:])
+	return h2[:]
+}
+
+func bitsToCompact(bitsHex string) uint32 {
+	if len(bitsHex) != 8 {
+		return 0
+	}
+	c, _ := strconv.ParseUint(bitsHex, 16, 32)
+	return uint32(c)
+}
+
+var poolDiff1 = new(big.Int).SetBytes([]byte{
+	0x00, 0x00, 0x7f, 0xff, 0xff, 0x00, 0x00, 0x00,
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+})
+
+func CompactToBig(compact uint32) *big.Int {
+	size := compact >> 24
+	word := compact & 0x007fffff
+	bn := new(big.Int).SetUint64(uint64(word))
+	if size <= 3 {
+		bn.Rsh(bn, uint(8*(3-size)))
+	} else {
+		bn.Lsh(bn, uint(8*(size-3)))
+	}
+	if compact&0x00800000 != 0 {
+		bn.Neg(bn)
+	}
+	return bn
+}
+
+func TargetForDifficulty(diff float64) *big.Int {
+	if diff <= 0 || math.IsNaN(diff) || math.IsInf(diff, 0) {
+		diff = 1
+	}
+	// Avoid float precision loss: target = poolDiff1 * 1e9 / uint64(diff * 1e9)
+	intDiff := uint64(diff * 1e9)
+	if intDiff == 0 {
+		intDiff = 1e9
+	}
+	denom := new(big.Int).SetUint64(intDiff)
+	target := new(big.Int).Mul(poolDiff1, new(big.Int).SetUint64(1e9))
+	target.Div(target, denom)
+	if target.Sign() <= 0 {
+		return big.NewInt(1)
+	}
+	return target
+}
+
+func HashMeetsTarget(hash []byte, target *big.Int) bool {
+	return HashToBig(hash).Cmp(target) <= 0
+}
+
+func HashToBig(hash []byte) *big.Int {
+	rev := make([]byte, len(hash))
+	for i := range hash {
+		rev[i] = hash[len(hash)-1-i]
+	}
+	return new(big.Int).SetBytes(rev)
+}
+
+func reverseBytes(b []byte) []byte {
+	r := make([]byte, len(b))
+	for i := range b {
+		r[i] = b[len(b)-1-i]
+	}
+	return r
+}
+
+// ====================== SUBMIT ======================
+
+func (m *Miner) submitShare(job *MiningJob, en2 string, ntime, nonce uint32) {
+	m.send(StratumMessage{
+		ID:     3,
+		Method: "mining.submit",
+		Params: []interface{}{
+			fmt.Sprintf("%s.%s", m.walletAddress, m.workerName),
+			job.JobID,
+			en2,
+			fmt.Sprintf("%08x", ntime),
+			fmt.Sprintf("%08x", nonce),
+		},
+	})
+}
+
+// ====================== HANDLING ======================
+
+func (m *Miner) handleMessages() {
+	for {
+		var raw json.RawMessage
+		if err := m.decoder.Decode(&raw); err != nil {
+			select {
+			case <-m.quit:
+				return
+			default:
+				log.Printf("Decode error: %v", err)
+				return
+			}
+		}
+
+		var msg map[string]interface{}
+		if err := json.Unmarshal(raw, &msg); err != nil {
+			continue
+		}
+
+		if id, ok := msg["id"].(float64); ok {
+			if id == 1 {
+				if resArr, ok := msg["result"].([]interface{}); ok && len(resArr) >= 3 {
+					if en1, ok := resArr[1].(string); ok {
+						m.extranonce1 = en1
+					}
+				}
+				continue
+			}
+			if id == 3 {
+				if errVal, hasErr := msg["error"]; hasErr && errVal != nil {
+					log.Printf("rejected: %v", errVal)
+				} else if result, hasResult := msg["result"]; hasResult {
+					if b, ok := result.(bool); ok && b {
+						atomic.AddInt64(&m.stats.AcceptedShares, 1)
+					}
+				}
+				continue
+			}
+			continue
+		}
+
+		if method, ok := msg["method"].(string); ok {
+			switch method {
+			case "mining.notify":
+				if p, ok := msg["params"].([]interface{}); ok && len(p) >= 9 {
+					if job := parseJob(p); job != nil {
+						m.currentJob.Store(job)
+						log.Printf("job %s", job.JobID)
+					}
+				}
+			case "mining.set_difficulty":
+				if p, ok := msg["params"].([]interface{}); ok && len(p) > 0 {
+					if d, ok := p[0].(float64); ok {
+						m.shareDifficulty = d
+					}
+				}
+			}
+		}
+	}
+}
+
+func parseJob(params []interface{}) *MiningJob {
+	job := &MiningJob{
+		JobID:     fmt.Sprintf("%v", params[0]),
+		PrevHash:  fmt.Sprintf("%v", params[1]),
+		Coinbase1: fmt.Sprintf("%v", params[2]),
+		Coinbase2: fmt.Sprintf("%v", params[3]),
+		NBits:     fmt.Sprintf("%v", params[6]),
+		NTime:     fmt.Sprintf("%v", params[7]),
+	}
+	if cj, ok := params[8].(bool); ok {
+		job.CleanJobs = cj
+	}
+	if m, ok := params[4].([]interface{}); ok {
+		job.Branches = make([]string, len(m))
+		for i, v := range m {
+			job.Branches[i] = fmt.Sprintf("%v", v)
+		}
+	}
+	switch v := params[5].(type) {
+	case string:
+		job.Version = v
+	case float64:
+		job.Version = fmt.Sprintf("%08x", uint32(v))
+	}
+	return job
+}
+
+// ====================== STATS ======================
+
+func (m *Miner) updateHashRate() {
+	elapsed := time.Since(m.stats.StartTime).Seconds()
+	if elapsed > 2 {
+		hr := float64(atomic.LoadUint64(&m.stats.TotalHashes)) / elapsed
+		atomic.StoreInt64(&m.stats.HashRate, int64(hr))
+	}
+}
+
+func (m *Miner) reportStats() {
+	ticker := time.NewTicker(8 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			log.Printf("acc %d  rate %.0f H/s",
+				atomic.LoadInt64(&m.stats.AcceptedShares),
+				float64(atomic.LoadInt64(&m.stats.HashRate)))
+		case <-m.quit:
+			return
+		}
+	}
+}
+
+func (m *Miner) pingLoop() {
+	ticker := time.NewTicker(25 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			m.send(StratumMessage{ID: 0, Method: "mining.ping"})
+		case <-m.quit:
+			return
+		}
+	}
+}

@@ -1,0 +1,11 @@
+services:
+  miner:
+    build: .
+    image: legacycoin-miner
+    container_name: legacycoin-miner
+    network_mode: host
+    environment:
+      - WALLET=${WALLET:-Li8Q3GonH6iocGzfZLGxbpjazqnmez8zrJ.20}
+      - POOL=${POOL:-stratum+tcp://127.0.0.1:3333}
+      - WORKERS=${WORKERS:-4}
+    restart: unless-stopped

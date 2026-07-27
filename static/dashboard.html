@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LegacyCoin Miner</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-950 text-gray-100 font-mono">
+  <div class="max-w-4xl mx-auto p-6">
+    <h1 class="text-2xl font-bold text-yellow-400 mb-6">LegacyCoin Miner</h1>
+
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6" id="stats">
+      <div class="bg-gray-900 border border-gray-800 rounded p-4">
+        <div class="text-xs text-gray-500 uppercase">Hashrate</div>
+        <div class="text-xl font-bold text-green-400" id="hashrate">-</div>
+      </div>
+      <div class="bg-gray-900 border border-gray-800 rounded p-4">
+        <div class="text-xs text-gray-500 uppercase">Accepted</div>
+        <div class="text-xl font-bold text-blue-400" id="accepted">-</div>
+      </div>
+      <div class="bg-gray-900 border border-gray-800 rounded p-4">
+        <div class="text-xs text-gray-500 uppercase">Total Hashes</div>
+        <div class="text-xl font-bold text-purple-400" id="totalHashes">-</div>
+      </div>
+      <div class="bg-gray-900 border border-gray-800 rounded p-4">
+        <div class="text-xs text-gray-500 uppercase">Uptime</div>
+        <div class="text-xl font-bold text-cyan-400" id="uptime">-</div>
+      </div>
+    </div>
+
+    <div class="bg-gray-900 border border-gray-800 rounded p-4 mb-6">
+      <h2 class="text-sm text-gray-500 uppercase mb-3">Configuration</h2>
+      <div class="space-y-1 text-sm">
+        <div><span class="text-gray-500">Pool:</span> <span id="pool" class="text-gray-300">-</span></div>
+        <div><span class="text-gray-500">Wallet:</span> <span id="wallet" class="text-gray-300">-</span></div>
+        <div><span class="text-gray-500">Worker:</span> <span id="worker" class="text-gray-300">-</span></div>
+        <div><span class="text-gray-500">Threads:</span> <span id="threads" class="text-gray-300">-</span></div>
+      </div>
+    </div>
+
+    <div id="error" class="hidden bg-red-900/50 border border-red-800 rounded p-4 text-red-300 text-sm"></div>
+  </div>
+
+  <script>
+    async function fetchStats() {
+      try {
+        const res = await fetch('/api/stats');
+        const data = await res.json();
+
+        document.getElementById('hashrate').textContent = formatHashrate(data.hashRate);
+        document.getElementById('accepted').textContent = data.acceptedShares.toLocaleString();
+        document.getElementById('totalHashes').textContent = data.totalHashes.toLocaleString();
+        document.getElementById('uptime').textContent = formatUptime(data.uptimeSeconds);
+        document.getElementById('pool').textContent = data.poolAddress;
+        document.getElementById('wallet').textContent = data.walletAddress;
+        document.getElementById('worker').textContent = data.workerName;
+        document.getElementById('threads').textContent = data.workers;
+
+        document.getElementById('error').classList.add('hidden');
+      } catch (e) {
+        const err = document.getElementById('error');
+        err.textContent = 'Connection lost. Retrying...';
+        err.classList.remove('hidden');
+      }
+    }
+
+    function formatHashrate(h) {
+      if (h <= 0) return '0 H/s';
+      h = Number(h);
+      if (h >= 1e9) return (h / 1e9).toFixed(2) + ' GH/s';
+      if (h >= 1e6) return (h / 1e6).toFixed(2) + ' MH/s';
+      if (h >= 1e3) return (h / 1e3).toFixed(2) + ' kH/s';
+      return h.toFixed(0) + ' H/s';
+    }
+
+    function formatUptime(s) {
+      s = Math.floor(s);
+      const d = Math.floor(s / 86400);
+      s %= 86400;
+      const h = Math.floor(s / 3600);
+      s %= 3600;
+      const m = Math.floor(s / 60);
+      s %= 60;
+      const parts = [];
+      if (d) parts.push(d + 'd');
+      if (h) parts.push(h + 'h');
+      if (m) parts.push(m + 'm');
+      parts.push(s + 's');
+      return parts.join(' ');
+    }
+
+    fetchStats();
+    setInterval(fetchStats, 5000);
+  </script>
+</body>
+</html>

@@ -1,0 +1,13 @@
+/legacycoin-miner
+/build/
+/tmp/
+/logs/
+/ecosystem.config.js
+/ecosystem.config.cjs
+/.env
+*.o
+*.a
+yespower/libyespower.a
+yespower/*.o
+crypto/yespower/libyespower.a
+crypto/yespower/*.o
