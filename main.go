@@ -322,19 +322,12 @@ func (m *Miner) mineJob(workerID int, job *MiningJob) {
 			m.submitShare(job, extranonce2, ntime, nonce)
 
 			if HashMeetsTarget(hash[:], netTarget) {
-//				log.Printf("BLOCK FOUND by worker %d hash=%x header=%x merkle=%x nbits=%x nonce=%d ntime=%d en2=%s", workerID, hash[:], header, merkleRoot, nbits, nonce, ntime, extranonce2)
-    // Лог в формате майнера (little-endian)
-    log.Printf("BLOCK FOUND by worker %d", workerID)
-    log.Printf("  hash (LE): %x", hash[:])
-    // Лог в формате эксплорера (big-endian) - для проверки
-    log.Printf("  hash (BE): %x", reverseBytes(hash[:]))
-    log.Printf("  header: %x", header)
-    log.Printf("  nonce: %d", nonce)
+				log.Printf("BLOCK FOUND by worker %d", workerID)
+				log.Printf("  hash (LE): %x", hash[:])
+				log.Printf("  hash (BE): %x", reverseBytes(hash[:]))
+				log.Printf("  header: %x", header)
+				log.Printf("  nonce: %d", nonce)
 			}
-		}
-
-		if nonce%4096 == 0 && nonce > 0 {
-			m.updateHashRate()
 		}
 	}
 }
@@ -556,20 +549,28 @@ func parseJob(params []interface{}) *MiningJob {
 
 // ====================== STATS ======================
 
-func (m *Miner) updateHashRate() {
-	elapsed := time.Since(m.stats.StartTime).Seconds()
-	if elapsed > 2 {
-		hr := float64(atomic.LoadUint64(&m.stats.TotalHashes)) / elapsed
-		atomic.StoreInt64(&m.stats.HashRate, int64(hr))
-	}
-}
-
 func (m *Miner) reportStats() {
 	ticker := time.NewTicker(8 * time.Second)
 	defer ticker.Stop()
+
+	var prevHashes uint64
+	var prevTime time.Time
+
 	for {
 		select {
 		case <-ticker.C:
+			hashes := atomic.LoadUint64(&m.stats.TotalHashes)
+			now := time.Now()
+
+			if prevHashes > 0 {
+				elapsed := now.Sub(prevTime).Seconds()
+				rate := float64(hashes-prevHashes) / elapsed
+				atomic.StoreInt64(&m.stats.HashRate, int64(rate))
+			}
+
+			prevHashes = hashes
+			prevTime = now
+
 			log.Printf("acc %d  rate %.0f H/s",
 				atomic.LoadInt64(&m.stats.AcceptedShares),
 				float64(atomic.LoadInt64(&m.stats.HashRate)))
