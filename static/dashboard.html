@@ -10,7 +10,10 @@
   <div class="max-w-4xl mx-auto p-6">
     <h1 class="text-2xl font-bold text-yellow-400 mb-6">LegacyCoin Miner</h1>
 
-    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6" id="stats">
+    <div id="error" class="hidden bg-red-900/50 border border-red-800 rounded p-4 text-red-300 text-sm mb-6"></div>
+    <div id="success" class="hidden bg-green-900/50 border border-green-800 rounded p-4 text-green-300 text-sm mb-6"></div>
+
+    <div class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6" id="stats">
       <div class="bg-gray-900 border border-gray-800 rounded p-4">
         <div class="text-xs text-gray-500 uppercase">Hashrate</div>
         <div class="text-xl font-bold text-green-400" id="hashrate">-</div>
@@ -27,46 +30,137 @@
         <div class="text-xs text-gray-500 uppercase">Uptime</div>
         <div class="text-xl font-bold text-cyan-400" id="uptime">-</div>
       </div>
+      <div class="bg-gray-900 border border-gray-800 rounded p-4">
+        <div class="text-xs text-gray-500 uppercase">Status</div>
+        <div class="text-xl font-bold" id="status">-</div>
+      </div>
     </div>
 
     <div class="bg-gray-900 border border-gray-800 rounded p-4 mb-6">
       <h2 class="text-sm text-gray-500 uppercase mb-3">Configuration</h2>
-      <div class="space-y-1 text-sm">
-        <div><span class="text-gray-500">Pool:</span> <span id="pool" class="text-gray-300">-</span></div>
-        <div><span class="text-gray-500">Wallet:</span> <span id="wallet" class="text-gray-300">-</span></div>
-        <div><span class="text-gray-500">Worker:</span> <span id="worker" class="text-gray-300">-</span></div>
-        <div><span class="text-gray-500">Threads:</span> <span id="threads" class="text-gray-300">-</span></div>
-      </div>
+      <form id="configForm" class="space-y-3">
+        <div>
+          <label class="text-xs text-gray-500 block mb-1">Wallet</label>
+          <input name="wallet" class="w-full bg-gray-950 border border-gray-800 rounded px-3 py-2 text-sm text-gray-100 focus:outline-none focus:border-yellow-600" required>
+        </div>
+        <div>
+          <label class="text-xs text-gray-500 block mb-1">Pool</label>
+          <input name="pool" class="w-full bg-gray-950 border border-gray-800 rounded px-3 py-2 text-sm text-gray-100 focus:outline-none focus:border-yellow-600" required>
+        </div>
+        <div>
+          <label class="text-xs text-gray-500 block mb-1">Workers</label>
+          <input name="workers" type="number" min="1" max="64" class="w-full bg-gray-950 border border-gray-800 rounded px-3 py-2 text-sm text-gray-100 focus:outline-none focus:border-yellow-600" required>
+        </div>
+        <button type="submit" class="bg-yellow-600 hover:bg-yellow-500 text-black font-bold px-4 py-2 rounded text-sm">Save & Restart</button>
+      </form>
     </div>
 
-    <div id="error" class="hidden bg-red-900/50 border border-red-800 rounded p-4 text-red-300 text-sm"></div>
+    <div class="flex gap-3 mb-6">
+      <button id="btnStart" class="bg-green-700 hover:bg-green-600 px-4 py-2 rounded text-sm font-bold disabled:opacity-50">Start</button>
+      <button id="btnStop" class="bg-red-700 hover:bg-red-600 px-4 py-2 rounded text-sm font-bold disabled:opacity-50">Stop</button>
+      <button id="btnRestart" class="bg-blue-700 hover:bg-blue-600 px-4 py-2 rounded text-sm font-bold disabled:opacity-50">Restart</button>
+    </div>
   </div>
 
   <script>
+    const $ = id => document.getElementById(id);
+
     async function fetchStats() {
       try {
         const res = await fetch('/api/stats');
         const data = await res.json();
 
         document.getElementById('hashrate').textContent = formatHashrate(data.hashRate);
-        document.getElementById('accepted').textContent = data.acceptedShares.toLocaleString();
-        document.getElementById('totalHashes').textContent = data.totalHashes.toLocaleString();
-        document.getElementById('uptime').textContent = formatUptime(data.uptimeSeconds);
-        document.getElementById('pool').textContent = data.poolAddress;
-        document.getElementById('wallet').textContent = data.walletAddress;
-        document.getElementById('worker').textContent = data.workerName;
-        document.getElementById('threads').textContent = data.workers;
+        document.getElementById('accepted').textContent = (data.acceptedShares || 0).toLocaleString();
+        document.getElementById('totalHashes').textContent = (data.totalHashes || 0).toLocaleString();
+        document.getElementById('uptime').textContent = formatUptime(data.uptimeSeconds || 0);
 
-        document.getElementById('error').classList.add('hidden');
+        const statusEl = document.getElementById('status');
+        if (data.running) {
+          statusEl.textContent = 'RUNNING';
+          statusEl.className = 'text-xl font-bold text-green-400';
+        } else {
+          statusEl.textContent = 'STOPPED';
+          statusEl.className = 'text-xl font-bold text-red-400';
+        }
+
+        updateButtons(data.running);
+
+        $('error').classList.add('hidden');
       } catch (e) {
-        const err = document.getElementById('error');
-        err.textContent = 'Connection lost. Retrying...';
-        err.classList.remove('hidden');
+        $('error').textContent = 'Connection lost. Retrying...';
+        $('error').classList.remove('hidden');
       }
     }
 
+    async function fetchConfig() {
+      try {
+        const res = await fetch('/api/config');
+        const cfg = await res.json();
+        document.querySelector('input[name="wallet"]').value = cfg.wallet || '';
+        document.querySelector('input[name="pool"]').value = cfg.pool || '';
+        document.querySelector('input[name="workers"]').value = cfg.workers || 4;
+      } catch (e) {
+        $('error').textContent = 'Failed to load config';
+        $('error').classList.remove('hidden');
+      }
+    }
+
+    document.getElementById('configForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const form = new FormData(e.target);
+      const cfg = {
+        wallet: form.get('wallet'),
+        pool: form.get('pool'),
+        workers: parseInt(form.get('workers')),
+        worker: 'cpu'
+      };
+      try {
+        const res = await fetch('/api/config', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(cfg)
+        });
+        const result = await res.json();
+        if (result.status === 'ok') {
+          $('success').textContent = 'Config saved, miner restarted';
+          $('success').classList.remove('hidden');
+          setTimeout(() => $('success').classList.add('hidden'), 3000);
+        }
+      } catch (e) {
+        $('error').textContent = 'Failed to save config';
+        $('error').classList.remove('hidden');
+      }
+    });
+
+    function minerAction(action) {
+      return async () => {
+        try {
+          const res = await fetch('/api/miner/' + action, { method: 'POST' });
+          const result = await res.json();
+          $('success').textContent = 'Miner ' + result.status;
+          $('success').classList.remove('hidden');
+          setTimeout(() => $('success').classList.add('hidden'), 2000);
+          setTimeout(fetchStats, 500);
+        } catch (e) {
+          $('error').textContent = 'Action failed';
+          $('error').classList.remove('hidden');
+        }
+      };
+    }
+
+    $('btnStart').addEventListener('click', minerAction('start'));
+    $('btnStop').addEventListener('click', minerAction('stop'));
+    $('btnRestart').addEventListener('click', minerAction('restart'));
+
+    function updateButtons(running) {
+      $('btnStart').disabled = running;
+      $('btnStop').disabled = !running;
+      $('btnRestart').disabled = !running;
+    }
+
     function formatHashrate(h) {
-      if (h <= 0) return '0 H/s';
+      if (!h || h <= 0) return '0 H/s';
       h = Number(h);
       if (h >= 1e9) return (h / 1e9).toFixed(2) + ' GH/s';
       if (h >= 1e6) return (h / 1e6).toFixed(2) + ' MH/s';
@@ -75,7 +169,7 @@
     }
 
     function formatUptime(s) {
-      s = Math.floor(s);
+      s = Math.floor(s || 0);
       const d = Math.floor(s / 86400);
       s %= 86400;
       const h = Math.floor(s / 3600);
@@ -90,6 +184,7 @@
       return parts.join(' ');
     }
 
+    fetchConfig();
     fetchStats();
     setInterval(fetchStats, 5000);
   </script>

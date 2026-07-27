@@ -14,14 +14,10 @@ import (
 	"math/big"
 	"net"
 	"net/http"
-	"os"
-	"os/signal"
-	"runtime"
 	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
-	"syscall"
 	"time"
 
 	"legacycoin-miner/crypto"
@@ -78,33 +74,78 @@ type MiningStats struct {
 }
 
 func main() {
-	poolAddr := flag.String("pool", "stratum+tcp://127.0.0.1:3333", "Pool address")
-	wallet := flag.String("wallet", "", "Wallet address")
-	worker := flag.String("worker", "cpu", "Worker name")
-	threads := flag.Int("workers", runtime.NumCPU(), "Threads")
 	webAddr := flag.String("web", ":3002", "Web server address")
-
 	flag.Parse()
 
-	if *wallet == "" {
-		log.Fatal("Usage: -wallet=YOUR_WALLET_ADDRESS")
+	cfg := loadConfig()
+
+	if cfg.Wallet == "" {
+		log.Fatal("Wallet not set. Set WALLET env var or configure via web UI")
 	}
 
-	miner := NewMiner(*poolAddr, *wallet, *worker, *threads)
+	mgr := NewManager(cfg)
+	mgr.Start()
 
-	http.HandleFunc("/api/stats", func(w http.ResponseWriter, r *http.Request) {
+	mux := http.NewServeMux()
+
+	mux.HandleFunc("/api/stats", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(miner.Stats())
+		json.NewEncoder(w).Encode(mgr.Status())
 	})
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+
+	mux.HandleFunc("/api/config", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case "GET":
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(mgr.Config())
+		case "PUT":
+			var cfg Config
+			if err := json.NewDecoder(r.Body).Decode(&cfg); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			if err := mgr.UpdateConfig(cfg); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+		default:
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
+
+	mux.HandleFunc("/api/miner/", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.Method {
+		case "POST":
+			switch r.URL.Path {
+			case "/api/miner/start":
+				mgr.Start()
+				json.NewEncoder(w).Encode(map[string]string{"status": "started"})
+			case "/api/miner/stop":
+				mgr.Stop()
+				json.NewEncoder(w).Encode(map[string]string{"status": "stopped"})
+			case "/api/miner/restart":
+				mgr.Restart()
+				json.NewEncoder(w).Encode(map[string]string{"status": "restarted"})
+			default:
+				http.Error(w, "not found", http.StatusNotFound)
+			}
+		default:
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
+
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.Write([]byte(dashboardHTML))
 	})
 
-	go miner.Run()
-
 	log.Printf("Web UI: http://0.0.0.0%s", *webAddr)
-	if err := http.ListenAndServe(*webAddr, nil); err != nil {
+	log.Printf("Config: pool=%s wallet=%s workers=%d", cfg.Pool, cfg.Wallet, cfg.Workers)
+
+	if err := http.ListenAndServe(*webAddr, mux); err != nil {
 		log.Fatalf("Web server error: %v", err)
 	}
 }
@@ -137,19 +178,6 @@ func NewMiner(pool, wallet, worker string, workers int) *Miner {
 
 func (m *Miner) Run() {
 	log.Printf("Legacycoin Miner | Workers: %d", m.workers)
-
-	sig := make(chan os.Signal, 1)
-	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
-	go func() {
-		<-sig
-		log.Println("Shutting down...")
-		close(m.quit)
-		m.sendMu.Lock()
-		if m.conn != nil {
-			m.conn.Close()
-		}
-		m.sendMu.Unlock()
-	}()
 
 	go m.reportStats()
 	go m.pingLoop()

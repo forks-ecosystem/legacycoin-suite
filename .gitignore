@@ -11,3 +11,4 @@ yespower/libyespower.a
 yespower/*.o
 crypto/yespower/libyespower.a
 crypto/yespower/*.o
+config.json
