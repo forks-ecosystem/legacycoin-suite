@@ -180,7 +180,6 @@ func (m *Miner) Run() {
 	log.Printf("Legacycoin Miner | Workers: %d", m.workers)
 
 	go m.reportStats()
-	go m.pingLoop()
 
 	for i := 0; i < m.workers; i++ {
 		go m.worker(i)
@@ -235,10 +234,15 @@ func (m *Miner) connect() error {
 	if !strings.Contains(addr, ":") {
 		addr += ":3333"
 	}
-	conn, err := net.Dial("tcp", addr)
+	conn, err := net.DialTimeout("tcp", addr, 10*time.Second)
 	if err != nil {
 		return err
 	}
+
+	tcpConn := conn.(*net.TCPConn)
+	tcpConn.SetKeepAlive(true)
+	tcpConn.SetKeepAlivePeriod(30 * time.Second)
+
 	if m.conn != nil {
 		m.conn.Close()
 	}
@@ -580,15 +584,3 @@ func (m *Miner) reportStats() {
 	}
 }
 
-func (m *Miner) pingLoop() {
-	ticker := time.NewTicker(25 * time.Second)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ticker.C:
-			m.send(StratumMessage{ID: 0, Method: "mining.ping"})
-		case <-m.quit:
-			return
-		}
-	}
-}
