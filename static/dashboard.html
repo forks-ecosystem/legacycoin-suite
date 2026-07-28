@@ -184,6 +184,13 @@
       return parts.join(' ');
     }
 
+    document.addEventListener('keydown', (e) => {
+      if (e.target.tagName === 'INPUT') return;
+      if (e.key === '1') { e.preventDefault(); $('btnStart').click(); }
+      if (e.key === '2') { e.preventDefault(); $('btnStop').click(); }
+      if (e.key === '3') { e.preventDefault(); $('btnRestart').click(); }
+    });
+
     fetchConfig();
     fetchStats();
     setInterval(fetchStats, 5000);
