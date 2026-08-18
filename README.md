@@ -101,3 +101,29 @@ The embedded web server provides:
 - `/api/config` — GET/PUT the miner configuration
 - `/api/miner/start|stop|restart` — control the miner
 - `/admin` — Admin panel (setup/login/config/wallet)
+
+## Scripts
+
+All scripts use `__` prefix to appear at the top of `ls` output.
+
+### Management
+
+| Script | Description |
+|--------|-------------|
+| `__up.sh` | Start container and show status |
+| `__down.sh` | Stop container |
+
+### Installation
+
+| Script | Description | Installs to |
+|--------|-------------|-------------|
+| `__git_LegacyCore.sh` | Build legacycoind + legacycoin-cli | `/app/LegacyCore` |
+| `__git_legacycoin-explorer.sh` | Build block explorer | `/app/legacycoin-explorer` |
+| `__git_legasybtc-pool.sh` | Install mining pool | `/app/legacybtc-pool` |
+
+### Utility
+
+| Script | Description |
+|--------|-------------|
+| `__port_check.sh` | Check port availability |
+| `__set_all.sh` | Set all environment variables |
