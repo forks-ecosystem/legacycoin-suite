@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LegacyCoin Suite — Admin</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #0a0a0a; --card: #111; --border: #222; --muted: #666;
+    --fg: #e5e5e5; --primary: #3b82f6; --primary-fg: #fff;
+    --red: #ef4444; --green: #22c55e; --yellow: #eab308;
+  }
+  body { font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace; background: var(--bg); color: var(--fg); min-height: 100vh; }
+  .center { display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 1rem; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 2rem; width: 100%; max-width: 400px; }
+  .card h1 { font-size: 1.25rem; margin-bottom: 0.25rem; }
+  .card p.sub { font-size: 0.8rem; color: var(--muted); margin-bottom: 1.5rem; }
+  .field { margin-bottom: 1rem; }
+  .field label { display: block; font-size: 0.75rem; margin-bottom: 0.35rem; color: var(--fg); }
+  .field input { width: 100%; padding: 0.6rem 0.75rem; background: var(--bg); border: 1px solid var(--border); border-radius: 4px; color: var(--fg); font-family: inherit; font-size: 0.85rem; outline: none; }
+  .field input:focus { border-color: var(--primary); }
+  .btn { width: 100%; padding: 0.65rem; background: var(--primary); color: var(--primary-fg); border: none; border-radius: 4px; font-family: inherit; font-size: 0.85rem; cursor: pointer; margin-top: 0.5rem; }
+  .btn:hover { opacity: 0.9; }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .error { color: var(--red); font-size: 0.8rem; text-align: center; margin-top: 0.75rem; }
+  .success { color: var(--green); font-size: 0.8rem; text-align: center; margin-top: 0.75rem; }
+
+  /* Dashboard */
+  .dashboard { display: flex; min-height: 100vh; }
+  .sidebar { width: 220px; background: var(--card); border-right: 1px solid var(--border); display: flex; flex-direction: column; flex-shrink: 0; }
+  .sidebar-header { padding: 0.75rem 1rem; border-bottom: 1px solid var(--border); font-weight: bold; font-size: 0.85rem; }
+  .sidebar nav { flex: 1; padding: 0.5rem; }
+  .sidebar nav button { width: 100%; text-align: left; padding: 0.5rem 0.75rem; background: none; border: none; color: var(--muted); font-family: inherit; font-size: 0.8rem; border-radius: 4px; cursor: pointer; display: flex; align-items: center; gap: 0.5rem; }
+  .sidebar nav button:hover { background: var(--bg); color: var(--fg); }
+  .sidebar nav button.active { background: rgba(59,130,246,0.1); color: var(--primary); }
+  .sidebar-footer { padding: 0.75rem 1rem; border-top: 1px solid var(--border); }
+  .sidebar-footer button { width: 100%; padding: 0.4rem; background: none; border: 1px solid var(--border); color: var(--muted); font-family: inherit; font-size: 0.75rem; border-radius: 4px; cursor: pointer; }
+  .sidebar-footer button:hover { background: var(--bg); color: var(--fg); }
+  .main { flex: 1; padding: 1.5rem; overflow-y: auto; }
+  .main h2 { font-size: 1.1rem; margin-bottom: 0.25rem; }
+  .main p.desc { font-size: 0.8rem; color: var(--muted); margin-bottom: 1.25rem; }
+  .info-box { background: var(--bg); border: 1px solid var(--border); border-radius: 4px; padding: 0.75rem; font-size: 0.75rem; margin-bottom: 1.25rem; line-height: 1.6; }
+  .info-box span.lbl { color: var(--muted); }
+  .save-bar { display: flex; align-items: center; gap: 0.75rem; margin-top: 1.5rem; }
+  .save-bar .btn { width: auto; padding: 0.5rem 1.25rem; }
+</style>
+</head>
+<body>
+
+<!-- Loading -->
+<div id="view-loading" class="center"><div style="color:var(--muted)">Loading...</div></div>
+
+<!-- Setup -->
+<div id="view-setup" class="center" style="display:none">
+  <div class="card">
+    <h1>Admin Setup</h1>
+    <p class="sub">Create your admin credentials</p>
+    <form id="form-setup">
+      <div class="field"><label>Login</label><input id="setup-login" autofocus></div>
+      <div class="field"><label>Password</label><input type="password" id="setup-pass"></div>
+      <div class="field"><label>Confirm Password</label><input type="password" id="setup-confirm"></div>
+      <button type="submit" class="btn">Create Admin</button>
+      <div id="setup-error" class="error" style="display:none"></div>
+    </form>
+  </div>
+</div>
+
+<!-- Login -->
+<div id="view-login" class="center" style="display:none">
+  <div class="card">
+    <h1>Admin Login</h1>
+    <p class="sub">Miner administration</p>
+    <form id="form-login">
+      <div class="field"><label>Login</label><input id="login-user" autofocus></div>
+      <div class="field"><label>Password</label><input type="password" id="login-pass"></div>
+      <button type="submit" class="btn">Login</button>
+      <div id="login-error" class="error" style="display:none"></div>
+    </form>
+  </div>
+</div>
+
+<!-- Dashboard -->
+<div id="view-dashboard" class="dashboard" style="display:none">
+  <div class="sidebar">
+    <div class="sidebar-header">Suite Admin</div>
+    <nav id="sidebar-nav"></nav>
+    <div class="sidebar-footer"><button onclick="doLogout()">Logout</button></div>
+  </div>
+  <div class="main" id="main-content"></div>
+</div>
+
+<script>
+const API = '';
+let token = sessionStorage.getItem('admin_token');
+let currentSection = 'general';
+let config = null;
+
+function show(id) {
+  ['view-loading','view-setup','view-login','view-dashboard'].forEach(v => {
+    document.getElementById(v).style.display = v === id ? '' : 'none';
+  });
+}
+
+function headers() { return { 'Authorization': 'Bearer ' + (token||''), 'Content-Type': 'application/json' }; }
+
+async function init() {
+  try {
+    const r = await fetch(API+'/admin/status');
+    const d = await r.json();
+    if (!d.configured) { show('view-setup'); return; }
+    if (token) {
+      const c = await fetch(API+'/admin/config', { headers: headers() });
+      if (c.ok) { config = await c.json(); show('view-dashboard'); renderDashboard(); return; }
+      sessionStorage.removeItem('admin_token'); token = null;
+    }
+    show('view-login');
+  } catch { show('view-setup'); }
+}
+
+// Setup
+document.getElementById('form-setup').onsubmit = async (e) => {
+  e.preventDefault();
+  const login = document.getElementById('setup-login').value;
+  const pass = document.getElementById('setup-pass').value;
+  const confirm = document.getElementById('setup-confirm').value;
+  const errEl = document.getElementById('setup-error');
+  errEl.style.display = 'none';
+  if (pass !== confirm) { errEl.textContent = 'Passwords do not match'; errEl.style.display = ''; return; }
+  if (pass.length < 6) { errEl.textContent = 'Password must be at least 6 characters'; errEl.style.display = ''; return; }
+  try {
+    const r = await fetch(API+'/admin/setup', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({login, password:pass}) });
+    const d = await r.json();
+    if (r.ok) { sessionStorage.setItem('admin_token', d.token); token = d.token; await init(); }
+    else { errEl.textContent = d.error || 'Setup failed'; errEl.style.display = ''; }
+  } catch { errEl.textContent = 'Network error'; errEl.style.display = ''; }
+};
+
+// Login
+document.getElementById('form-login').onsubmit = async (e) => {
+  e.preventDefault();
+  const login = document.getElementById('login-user').value;
+  const pass = document.getElementById('login-pass').value;
+  const errEl = document.getElementById('login-error');
+  errEl.style.display = 'none';
+  try {
+    const r = await fetch(API+'/admin/login', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({login, password:pass}) });
+    const d = await r.json();
+    if (r.ok) { sessionStorage.setItem('admin_token', d.token); token = d.token; await init(); }
+    else { errEl.textContent = d.error || 'Invalid credentials'; errEl.style.display = ''; }
+  } catch { errEl.textContent = 'Network error'; errEl.style.display = ''; }
+};
+
+async function doLogout() {
+  await fetch(API+'/admin/logout', { method: 'POST', headers: headers() });
+  sessionStorage.removeItem('admin_token'); token = null; config = null;
+  show('view-login');
+}
+
+const SECTIONS = {
+  wallet: {
+    label: 'Wallet', icon: '💰', desc: 'Mining wallet',
+    fields: []
+  },
+  general: {
+    label: 'General', icon: '⚙️', desc: 'Miner settings',
+    fields: [
+      { key: 'Pool', label: 'Pool Address', desc: 'Stratum pool address (host:port)', placeholder: '127.0.0.1:3333' },
+      { key: 'Wallet', label: 'Wallet Address', desc: 'Mining wallet address', placeholder: 'Lf...' },
+      { key: 'Worker', label: 'Worker Name', desc: 'Worker identifier', placeholder: 'worker1' },
+      { key: 'Workers', label: 'Workers Count', desc: 'Number of mining threads', placeholder: '4', type: 'number' },
+    ]
+  },
+  security: {
+    label: 'Security', icon: '🔐', desc: 'Admin credentials',
+    fields: []
+  },
+  links: {
+    label: 'Services', icon: '🔗', desc: 'LegacyCoin ecosystem',
+    fields: []
+  },
+};
+
+function renderDashboard() {
+  const nav = document.getElementById('sidebar-nav');
+  nav.innerHTML = Object.entries(SECTIONS).map(([k,v]) =>
+    `<button data-s="${k}" class="${k===currentSection?'active':''}" onclick="goSection('${k}')">${v.icon} ${v.label}</button>`
+  ).join('');
+  renderSection();
+}
+
+function goSection(id) {
+  currentSection = id;
+  document.querySelectorAll('#sidebar-nav button').forEach(b => b.classList.toggle('active', b.dataset.s === id));
+  renderSection();
+}
+
+function renderSection() {
+  const main = document.getElementById('main-content');
+  const sec = SECTIONS[currentSection];
+  if (!sec) { main.innerHTML = ''; return; }
+
+  if (currentSection === 'wallet') {
+    main.innerHTML = `
+      <h2>${sec.icon} ${sec.label}</h2>
+      <p class="desc">${sec.desc}</p>
+      <div id="wallet-info" style="color:var(--muted)">Loading...</div>`;
+    loadWalletInfo();
+    return;
+  }
+
+  if (currentSection === 'links') {
+    main.innerHTML = `
+      <h2>${sec.icon} ${sec.label}</h2>
+      <p class="desc">${sec.desc}</p>
+      <div style="display:flex;flex-direction:column;gap:0.75rem;max-width:400px">
+        <a href="/" target="_blank" rel="noopener" style="display:flex;align-items:center;gap:0.75rem;padding:1rem;background:var(--bg);border:1px solid var(--border);border-radius:6px;text-decoration:none;color:var(--fg);font-family:inherit">
+          <span style="font-size:1.5rem">⛏️</span>
+          <div>
+            <div style="font-size:0.9rem;font-weight:bold">Miner</div>
+            <div style="font-size:0.7rem;color:var(--muted)">home</div>
+          </div>
+        </a>
+        <a href="https://wallet.forks.life/" target="_blank" rel="noopener" style="display:flex;align-items:center;gap:0.75rem;padding:1rem;background:var(--bg);border:1px solid var(--border);border-radius:6px;text-decoration:none;color:var(--fg);font-family:inherit">
+          <span style="font-size:1.5rem">💼</span>
+          <div>
+            <div style="font-size:0.9rem;font-weight:bold">Cold Wallets</div>
+            <div style="font-size:0.7rem;color:var(--muted)">wallet.forks.life</div>
+          </div>
+        </a>
+      </div>`;
+    return;
+  }
+
+  if (currentSection === 'security') {
+    main.innerHTML = `
+      <h2>${sec.icon} ${sec.label}</h2>
+      <p class="desc">${sec.desc}</p>
+      <div style="max-width:400px">
+        <div class="field"><label>New Password</label><input type="password" id="new-pass"></div>
+        <div class="field"><label>Confirm Password</label><input type="password" id="new-pass-confirm"></div>
+        <div class="save-bar"><button class="btn" onclick="changePassword()">Change Password</button><span id="pw-msg"></span></div>
+      </div>`;
+    return;
+  }
+
+  const infoHtml = currentSection === 'general' && config ? `
+    <div class="info-box" style="word-break:break-all">
+      <div><span class="lbl">Pool:</span> ${config.Pool || '—'}</div>
+      <div><span class="lbl">Wallet:</span> ${config.Wallet || '—'}</div>
+      <div><span class="lbl">Workers:</span> ${config.Workers || '—'}</div>
+    </div>` : '';
+
+  const fieldsHtml = sec.fields.map(f => `
+    <div class="field">
+      <label>${f.label}</label>
+      <p style="font-size:0.7rem;color:var(--muted);margin-bottom:0.3rem">${f.desc}</p>
+      <input type="${f.type||'text'}" id="cfg-${f.key}" value="${config?.[f.key]??''}" placeholder="${f.placeholder||''}">
+    </div>
+  `).join('');
+
+  main.innerHTML = `
+    <h2>${sec.icon} ${sec.label}</h2>
+    <p class="desc">${sec.desc}</p>
+    ${infoHtml}
+    ${fieldsHtml}
+    <div class="save-bar"><button class="btn" onclick="saveConfig()">Save Changes</button><span id="save-msg"></span></div>`;
+}
+
+async function saveConfig() {
+  const sec = SECTIONS[currentSection];
+  const newCfg = { ...config };
+  sec.fields.forEach(f => { newCfg[f.key] = document.getElementById('cfg-'+f.key).value; });
+  if (newCfg.Workers) newCfg.Workers = parseInt(newCfg.Workers) || 1;
+  const msgEl = document.getElementById('save-msg');
+  try {
+    const r = await fetch(API+'/admin/config', { method: 'POST', headers: headers(), body: JSON.stringify(newCfg) });
+    const d = await r.json();
+    if (r.ok) { config = newCfg; msgEl.innerHTML = '<span style="color:var(--green)">Saved</span>'; }
+    else { msgEl.innerHTML = '<span style="color:var(--red)">'+d.error+'</span>'; }
+  } catch { msgEl.innerHTML = '<span style="color:var(--red)">Network error</span>'; }
+  setTimeout(() => msgEl.innerHTML = '', 3000);
+}
+
+async function changePassword() {
+  const pass = document.getElementById('new-pass').value;
+  const confirm = document.getElementById('new-pass-confirm').value;
+  const msgEl = document.getElementById('pw-msg');
+  if (pass !== confirm) { msgEl.innerHTML = '<span style="color:var(--red)">Passwords do not match</span>'; return; }
+  if (pass.length < 6) { msgEl.innerHTML = '<span style="color:var(--red)">Min 6 characters</span>'; return; }
+  try {
+    const r = await fetch(API+'/admin/password', { method: 'POST', headers: headers(), body: JSON.stringify({password:pass}) });
+    if (r.ok) { msgEl.innerHTML = '<span style="color:var(--green)">Changed</span>'; document.getElementById('new-pass').value=''; document.getElementById('new-pass-confirm').value=''; }
+    else { msgEl.innerHTML = '<span style="color:var(--red)">Failed</span>'; }
+  } catch { msgEl.innerHTML = '<span style="color:var(--red)">Network error</span>'; }
+  setTimeout(() => msgEl.innerHTML = '', 3000);
+}
+
+async function loadWalletInfo() {
+  const el = document.getElementById('wallet-info');
+  try {
+    const r = await fetch(API+'/admin/wallet', { headers: headers() });
+    const d = await r.json();
+    if (!d.nodeRunning) {
+      el.innerHTML = `
+        <div class="info-box">
+          <div style="margin-bottom:0.5rem;color:var(--yellow)">⚠ Node not running</div>
+          <div style="margin-bottom:0.5rem"><span class="lbl">Start legacycoind to view wallet info</span></div>
+          <details style="margin-top:0.75rem">
+            <summary style="cursor:pointer;color:var(--muted);font-size:0.75rem">_git_LegacyCore.sh script</summary>
+            <pre style="margin-top:0.5rem;padding:0.75rem;background:var(--bg);border:1px solid var(--border);border-radius:4px;font-size:0.7rem;overflow-x:auto;white-space:pre-wrap">${escHtml(d.script || 'Not found')}</pre>
+          </details>
+        </div>`;
+      return;
+    }
+    let html = '<div class="info-box">';
+    if (d.balance !== undefined) {
+      html += `<div style="margin-bottom:0.5rem"><span class="lbl">Balance:</span> <span style="color:var(--green);font-size:1.1rem">${d.balance} LBTC</span></div>`;
+    }
+    if (d.walletinfo) {
+      html += `<div style="margin-top:0.75rem;border-top:1px solid var(--border);padding-top:0.5rem">`;
+      html += `<div><span class="lbl">Address:</span> <span style="user-select:all">${d.walletinfo.address || '—'}</span></div>`;
+      html += `<div><span class="lbl">Label:</span> ${d.walletinfo.label || '—'}</div>`;
+      html += `<div><span class="lbl">Key Pool:</span> ${d.walletinfo.keypoolsize || 0} keys</div>`;
+      html += `<div><span class="lbl">TX Count:</span> ${d.walletinfo.txcount || 0}</div>`;
+      html += `</div>`;
+    }
+    if (d.summary) {
+      html += `<div style="margin-top:0.75rem;border-top:1px solid var(--border);padding-top:0.5rem">`;
+      html += `<div><span class="lbl">Confirmed:</span> ${d.summary.balance || 0} LBTC</div>`;
+      html += `<div><span class="lbl">Unconfirmed:</span> ${d.summary.unconfirmed_balance || 0} LBTC</div>`;
+      html += `<div><span class="lbl">Immature:</span> ${d.summary.immature_balance || 0} LBTC</div>`;
+      html += `</div>`;
+    }
+    html += '</div>';
+    el.innerHTML = html;
+  } catch {
+    el.innerHTML = '<div style="color:var(--red)">Failed to load wallet info</div>';
+  }
+}
+
+function escHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+init();
+</script>
+</body>
+</html>

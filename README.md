@@ -1,4 +1,26 @@
-# LegacyCoin Miner
+# LegacyCoin Suite
+
+LegacyCoin Suite is the entry point and management console for the LBTC / ForkEX ecosystem. Suite does not store secrets.
+
+The miner is the first and simplest component — a single step to start mining. Other components can be added as needed:
+
+```text
+LegacyCoin Suite
+│
+├── 1. Miner
+│      └── first, simple entry
+│
+├── 2. Pool
+│      └── setup / configuration / monitoring
+│
+├── 3. Node
+│      └── optional node installation and management
+│
+└── 4. Explorer
+       └── optional block explorer
+```
+
+## Miner
 
 A CPU miner for LegacyCoin (LBTC) with Stratum v1 protocol support and embedded web dashboard.
 
@@ -9,7 +31,7 @@ A CPU miner for LegacyCoin (LBTC) with Stratum v1 protocol support and embedded 
 - Yespower PoW algorithm (CGO-optimized C implementation with AVX2 support)
 - Embedded web dashboard on port 3002
 - Configuration via `config.json` (or env vars)
-- PM2 process management with automatic log rotation
+- Docker deployment with automatic restart
 
 ## Quick Start
 
@@ -33,16 +55,16 @@ Environment variables (`WALLET`, `POOL`, `WORKERS`, `WORKER`) override `config.j
 ```bash
 # CGO is required for the optimized yespower implementation.
 # Build with CPU-specific optimizations for best hashrate:
-CGO_CFLAGS="-O3 -mavx2 -mavx -msse4.1" go build -o legacycoin-miner .
+CGO_CFLAGS="-O3 -mavx2 -mavx -msse4.1" go build -o legacycoin-suite .
 ```
 
 Plain `go build` also works but only uses SSE2; for max hashrate on x86-64 CPUs add the AVX2 flags above.
 
-### 3. Run with PM2 (recommended)
+### 3. Run with Docker (recommended)
 
 ```bash
-pm2 start ecosystem.config.js
-pm2 save
+docker compose build suite
+docker compose up -d suite
 ```
 
 Open http://localhost:3002 for the dashboard.
@@ -50,39 +72,18 @@ Open http://localhost:3002 for the dashboard.
 ### Run directly
 
 ```bash
-./legacycoin-miner -web=:3002
+./legacycoin-suite -web=:3002
 ```
 
-## PM2 Management
+## Docker Management
 
 ```bash
-pm2 status                  # check status
-pm2 logs legacycoin-miner   # tail logs
-pm2 restart legacycoin-miner
-pm2 stop legacycoin-miner
-pm2 delete legacycoin-miner
+docker compose ps                    # check status
+docker compose logs -f suite         # tail logs
+docker compose restart suite
+docker compose stop suite
+docker compose down suite
 ```
-
-### Startup on boot
-
-```bash
-pm2 startup               # run the printed command once with sudo
-pm2 save                  # persist the current process list
-```
-
-### Log Rotation
-
-PM2 logs are written to `./logs/`. Automatic cleanup is configured with `pm2-logrotate`:
-
-```bash
-pm2 install pm2-logrotate
-pm2 set pm2-logrotate:max_size 10M
-pm2 set pm2-logrotate:retain 7
-pm2 set pm2-logrotate:compress true
-pm2 set pm2-logrotate:rotateInterval '0 0 * * *'
-```
-
-Logs are rotated at 10 MB (or daily), keeping 7 rotations, compressed with gzip.
 
 ## Flags
 
@@ -99,3 +100,4 @@ The embedded web server provides:
 - `/api/stats` — JSON endpoint with hashrate, accepted shares, uptime
 - `/api/config` — GET/PUT the miner configuration
 - `/api/miner/start|stop|restart` — control the miner
+- `/admin` — Admin panel (setup/login/config/wallet)

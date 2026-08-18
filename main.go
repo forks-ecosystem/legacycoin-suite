@@ -29,6 +29,9 @@ const chainStateFile = "tmp/chainstate.json"
 //go:embed static/dashboard.html
 var dashboardHTML string
 
+//go:embed static/admin.html
+var adminHTML string
+
 type StratumMessage struct {
 	ID     any           `json:"id"`
 	Method string        `json:"method,omitempty"`
@@ -101,9 +104,144 @@ func main() {
 	mgr.Start()
 
 	pn := newPoolNode()
+	adminAuth := NewAdminAuth()
 
 	mux := http.NewServeMux()
 
+	// --- Admin: SPA catch-all (serves HTML for any /admin/* GET, API routes below override) ---
+	adminServeHTML := func(w http.ResponseWriter) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Write([]byte(adminHTML))
+	}
+
+	mux.HandleFunc("/admin/", func(w http.ResponseWriter, r *http.Request) {
+		path := strings.TrimPrefix(r.URL.Path, "/admin/")
+		switch path {
+		case "status":
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]bool{"configured": adminAuth.isConfigured()})
+		case "setup":
+			if r.Method != http.MethodPost {
+				adminServeHTML(w)
+				return
+			}
+			var req struct {
+				Login    string `json:"login"`
+				Password string `json:"password"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			token, err := adminAuth.Setup(req.Login, req.Password)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]string{"token": token})
+		case "login":
+			if r.Method != http.MethodPost {
+				adminServeHTML(w)
+				return
+			}
+			var req struct {
+				Login    string `json:"login"`
+				Password string `json:"password"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			token, err := adminAuth.Login(req.Login, req.Password)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusUnauthorized)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]string{"token": token})
+		case "logout":
+			if r.Method != http.MethodPost {
+				adminServeHTML(w)
+				return
+			}
+			token := r.Header.Get("Authorization")
+			token = strings.TrimPrefix(token, "Bearer ")
+			if err := adminAuth.Logout(token); err != nil {
+				http.Error(w, err.Error(), http.StatusUnauthorized)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+		case "config":
+			token := r.Header.Get("Authorization")
+			token = strings.TrimPrefix(token, "Bearer ")
+			if !adminAuth.VerifySession(token) {
+				if r.Method == http.MethodGet {
+					adminServeHTML(w)
+					return
+				}
+				http.Error(w, "unauthorized", http.StatusUnauthorized)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			switch r.Method {
+			case "GET":
+				cfg := loadConfig()
+				json.NewEncoder(w).Encode(cfg)
+			case "POST":
+				var newCfg Config
+				if err := json.NewDecoder(r.Body).Decode(&newCfg); err != nil {
+					http.Error(w, err.Error(), http.StatusBadRequest)
+					return
+				}
+				if err := saveConfig(newCfg); err != nil {
+					http.Error(w, err.Error(), http.StatusInternalServerError)
+					return
+				}
+				json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+			default:
+				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			}
+		case "password":
+			if r.Method != http.MethodPost {
+				adminServeHTML(w)
+				return
+			}
+			token := r.Header.Get("Authorization")
+			token = strings.TrimPrefix(token, "Bearer ")
+			var req struct {
+				Password string `json:"password"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			if err := adminAuth.UpdatePassword(token, req.Password); err != nil {
+				http.Error(w, err.Error(), http.StatusUnauthorized)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+		case "wallet":
+			token := r.Header.Get("Authorization")
+			token = strings.TrimPrefix(token, "Bearer ")
+			if !adminAuth.VerifySession(token) {
+				if r.Method == http.MethodGet {
+					adminServeHTML(w)
+					return
+				}
+				http.Error(w, "unauthorized", http.StatusUnauthorized)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(GetWalletInfo())
+		default:
+			adminServeHTML(w)
+		}
+	})
+
+	// --- Pool Routes ---
 	mux.HandleFunc("/api/pool/status", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(pn.status())

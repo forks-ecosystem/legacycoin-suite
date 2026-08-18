@@ -3,8 +3,6 @@
 /tmp/
 /logs/
 *.log
-/ecosystem.config.js
-/ecosystem.config.cjs
 /.env
 *.o
 *.a
@@ -13,9 +11,4 @@ yespower/*.o
 crypto/yespower/libyespower.a
 crypto/yespower/*.o
 config.json
-
-# Docker removed — using PM2
-docker-compose.yml
-Dockerfile
-Dockerfile.*
-docker-entrypoint.sh
+config/admin.json
