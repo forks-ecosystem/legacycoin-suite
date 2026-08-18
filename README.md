@@ -128,3 +128,27 @@ Double `__` for essential management scripts, single `_` for utilities.
 |--------|-------------|
 | `_port_check.sh` | Check port availability |
 | `_set_all.sh` | Set all environment variables |
+| `_wallet.sh` | Multi-wallet management |
+
+## Multi-Wallet Structure
+
+The node uses a multi-wallet architecture:
+
+```
+/app/LegacyCore/wallets/
+├── wallets.json        (master config)
+├── miner/              (base mining - block rewards)
+├── pool/               (pool rewards distribution)
+├── exchange/           (hot wallet for exchange)
+└── cold/               (cold storage - long-term)
+```
+
+### Wallet Commands
+
+```bash
+_wallet.sh init              # Initialize structure
+_wallet.sh list              # List all wallets
+_wallet.sh create <name>     # Create new wallet
+_wallet.sh balance [name]    # Show balance
+_wallet.sh address <name>    # Get wallet address
+```

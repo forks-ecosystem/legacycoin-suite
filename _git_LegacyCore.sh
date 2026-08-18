@@ -31,12 +31,48 @@ go build -buildvcs=false -trimpath -ldflags "-s -w" -o legacycoind ./cmd/legacyc
 echo "🔨 Building legacycoin-cli..."
 go build -buildvcs=false -trimpath -ldflags "-s -w" -o legacycoin-cli ./cmd/legacycoin-cli
 
-# 4. Проверяем
+# 4. Инициализация мульти-кошельков
+echo ""
+echo "📂 Initializing multi-wallet structure..."
+WALLET_DIR="$INSTALL_DIR/wallets"
+mkdir -p "$WALLET_DIR"/{miner,pool,exchange,cold}
+
+for wallet in miner pool exchange cold; do
+    if [ ! -f "$WALLET_DIR/$wallet/wallet.json" ]; then
+        cat > "$WALLET_DIR/$wallet/wallet.json" << EOF
+{
+  "name": "$wallet",
+  "created": "$(date -Iseconds)",
+  "addresses": [],
+  "description": ""
+}
+EOF
+        echo "   ✓ wallets/$wallet/"
+    fi
+done
+
+if [ ! -f "$WALLET_DIR/wallets.json" ]; then
+    cat > "$WALLET_DIR/wallets.json" << EOF
+{
+  "version": 1,
+  "wallets": {
+    "miner": { "description": "Base mining wallet", "path": "miner/" },
+    "pool": { "description": "Pool rewards", "path": "pool/" },
+    "exchange": { "description": "Exchange hot wallet", "path": "exchange/" },
+    "cold": { "description": "Cold storage", "path": "cold/" }
+  }
+}
+EOF
+    echo "   ✓ wallets/wallets.json"
+fi
+
+# 5. Проверяем
 if [ -f "legacycoind" ] && [ -f "legacycoin-cli" ]; then
     echo ""
     echo "✅ Build successful!"
     echo "   legacycoind:  $(pwd)/legacycoind"
     echo "   legacycoin-cli: $(pwd)/legacycoin-cli"
+    echo "   wallets:      $(pwd)/wallets/"
     echo ""
     ls -la legacycoind legacycoin-cli
 else
