@@ -14,6 +14,7 @@ import (
 	"math/big"
 	"net"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -23,6 +24,8 @@ import (
 	"legacycoin-miner/crypto"
 )
 
+const chainStateFile = "tmp/chainstate.json"
+
 //go:embed static/dashboard.html
 var dashboardHTML string
 
@@ -30,6 +33,11 @@ type StratumMessage struct {
 	ID     any           `json:"id"`
 	Method string        `json:"method,omitempty"`
 	Params []interface{} `json:"params,omitempty"`
+}
+
+type chainState struct {
+	Height int64  `json:"height"`
+	Hash   string `json:"hash"`
 }
 
 type MiningJob struct {
@@ -63,6 +71,11 @@ type Miner struct {
 	stats  MiningStats
 	quit   chan struct{}
 	sendMu sync.Mutex
+
+	lastBlockMu     sync.Mutex
+	lastBlockHeight int64
+	lastBlockHash   string
+	lastBlockTime   time.Time
 }
 
 type MiningStats struct {
@@ -71,6 +84,7 @@ type MiningStats struct {
 	HashRate       int64
 	StartTime      time.Time
 	lastHashTime   time.Time
+	Height         int64
 }
 
 func main() {
@@ -86,7 +100,34 @@ func main() {
 	mgr := NewManager(cfg)
 	mgr.Start()
 
+	pn := newPoolNode()
+
 	mux := http.NewServeMux()
+
+	mux.HandleFunc("/api/pool/status", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(pn.status())
+	})
+
+	mux.HandleFunc("/api/pool/peers", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.Method {
+		case "GET":
+			json.NewEncoder(w).Encode(pn.peers())
+		case "POST":
+			var req struct {
+				Addr string `json:"addr"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			pn.addPeer(req.Addr)
+			json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+		default:
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
 
 	mux.HandleFunc("/api/stats", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -151,15 +192,28 @@ func main() {
 }
 
 func (m *Miner) Stats() map[string]interface{} {
+	m.lastBlockMu.Lock()
+	lbh := m.lastBlockHeight
+	lbHash := m.lastBlockHash
+	lbt := ""
+	if !m.lastBlockTime.IsZero() {
+		lbt = m.lastBlockTime.Format(time.RFC3339)
+	}
+	m.lastBlockMu.Unlock()
+
 	return map[string]interface{}{
-		"poolAddress":    m.poolAddress,
-		"walletAddress":  m.walletAddress,
-		"workerName":     m.workerName,
-		"workers":        m.workers,
-		"acceptedShares": atomic.LoadInt64(&m.stats.AcceptedShares),
-		"totalHashes":    atomic.LoadUint64(&m.stats.TotalHashes),
-		"hashRate":       float64(atomic.LoadInt64(&m.stats.HashRate)),
-		"uptimeSeconds":  time.Since(m.stats.StartTime).Seconds(),
+		"poolAddress":      m.poolAddress,
+		"walletAddress":    m.walletAddress,
+		"workerName":       m.workerName,
+		"workers":          m.workers,
+		"acceptedShares":   atomic.LoadInt64(&m.stats.AcceptedShares),
+		"totalHashes":      atomic.LoadUint64(&m.stats.TotalHashes),
+		"hashRate":         float64(atomic.LoadInt64(&m.stats.HashRate)),
+		"uptimeSeconds":    time.Since(m.stats.StartTime).Seconds(),
+		"height":           atomic.LoadInt64(&m.stats.Height),
+		"lastBlockHeight":  lbh,
+		"lastBlockHash":    lbHash,
+		"lastBlockTime":    lbt,
 	}
 }
 
@@ -326,6 +380,14 @@ func (m *Miner) mineJob(workerID int, job *MiningJob) {
 			m.submitShare(job, extranonce2, ntime, nonce)
 
 			if HashMeetsTarget(hash[:], netTarget) {
+				h := atomic.LoadInt64(&m.stats.Height)
+
+				m.lastBlockMu.Lock()
+				m.lastBlockHeight = h + 1
+				m.lastBlockHash = fmt.Sprintf("%x", reverseBytes(hash[:]))
+				m.lastBlockTime = time.Now()
+				m.lastBlockMu.Unlock()
+
 				log.Printf("BLOCK FOUND by worker %d", workerID)
 				log.Printf("  hash (LE): %x", hash[:])
 				log.Printf("  hash (BE): %x", reverseBytes(hash[:]))
@@ -553,12 +615,72 @@ func parseJob(params []interface{}) *MiningJob {
 
 // ====================== STATS ======================
 
+// ====================== POOL NODE ======================
+
+type poolNode struct {
+	port    int
+	mu      sync.RWMutex
+	peerMap map[string]string
+}
+
+func newPoolNode() *poolNode {
+	return &poolNode{
+		port:    3333,
+		peerMap: make(map[string]string),
+	}
+}
+
+func (pn *poolNode) status() map[string]interface{} {
+	pn.mu.RLock()
+	defer pn.mu.RUnlock()
+	return map[string]interface{}{
+		"port":       pn.port,
+		"peerCount":  len(pn.peerMap),
+		"running":    true,
+	}
+}
+
+func (pn *poolNode) peers() []map[string]interface{} {
+	pn.mu.RLock()
+	defer pn.mu.RUnlock()
+	var list []map[string]interface{}
+	for addr, status := range pn.peerMap {
+		list = append(list, map[string]interface{}{
+			"addr":   addr,
+			"status": status,
+		})
+	}
+	return list
+}
+
+func (pn *poolNode) addPeer(addr string) {
+	pn.mu.Lock()
+	pn.peerMap[addr] = "connecting"
+	pn.mu.Unlock()
+}
+
+func (m *Miner) readChainState() {
+	data, err := os.ReadFile(chainStateFile)
+	if err != nil {
+		return
+	}
+	var cs chainState
+	if err := json.Unmarshal(data, &cs); err != nil {
+		return
+	}
+	if cs.Height > 0 {
+		atomic.StoreInt64(&m.stats.Height, cs.Height)
+	}
+}
+
 func (m *Miner) reportStats() {
 	ticker := time.NewTicker(8 * time.Second)
 	defer ticker.Stop()
 
 	var prevHashes uint64
 	var prevTime time.Time
+
+	m.readChainState()
 
 	for {
 		select {
@@ -575,9 +697,12 @@ func (m *Miner) reportStats() {
 			prevHashes = hashes
 			prevTime = now
 
-			log.Printf("acc %d  rate %.0f H/s",
+			m.readChainState()
+
+			log.Printf("acc %d  rate %.0f H/s  height %d",
 				atomic.LoadInt64(&m.stats.AcceptedShares),
-				float64(atomic.LoadInt64(&m.stats.HashRate)))
+				float64(atomic.LoadInt64(&m.stats.HashRate)),
+				atomic.LoadInt64(&m.stats.Height))
 		case <-m.quit:
 			return
 		}

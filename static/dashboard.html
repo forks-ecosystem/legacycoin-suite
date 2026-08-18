@@ -10,60 +10,176 @@
   <div class="max-w-4xl mx-auto p-6">
     <h1 class="text-2xl font-bold text-yellow-400 mb-6">LegacyCoin Miner</h1>
 
-    <div id="error" class="hidden bg-red-900/50 border border-red-800 rounded p-4 text-red-300 text-sm mb-6"></div>
-    <div id="success" class="hidden bg-green-900/50 border border-green-800 rounded p-4 text-green-300 text-sm mb-6"></div>
+    <div id="error" class="hidden fixed bottom-4 left-1/2 -translate-x-1/2 z-50 bg-red-900/90 border border-red-800 rounded p-4 text-red-300 text-sm max-w-xl w-full"></div>
+    <div id="success" class="hidden fixed bottom-4 left-1/2 -translate-x-1/2 z-50 bg-green-900/90 border border-green-800 rounded p-4 text-green-300 text-sm max-w-xl w-full"></div>
 
-    <div class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6" id="stats">
-      <div class="bg-gray-900 border border-gray-800 rounded p-4">
-        <div class="text-xs text-gray-500 uppercase">Hashrate</div>
-        <div class="text-xl font-bold text-green-400" id="hashrate">-</div>
-      </div>
-      <div class="bg-gray-900 border border-gray-800 rounded p-4">
-        <div class="text-xs text-gray-500 uppercase">Accepted</div>
-        <div class="text-xl font-bold text-blue-400" id="accepted">-</div>
-      </div>
-      <div class="bg-gray-900 border border-gray-800 rounded p-4">
-        <div class="text-xs text-gray-500 uppercase">Total Hashes</div>
-        <div class="text-xl font-bold text-purple-400" id="totalHashes">-</div>
-      </div>
-      <div class="bg-gray-900 border border-gray-800 rounded p-4">
-        <div class="text-xs text-gray-500 uppercase">Uptime</div>
-        <div class="text-xl font-bold text-cyan-400" id="uptime">-</div>
-      </div>
-      <div class="bg-gray-900 border border-gray-800 rounded p-4">
-        <div class="text-xs text-gray-500 uppercase">Status</div>
-        <div class="text-xl font-bold" id="status">-</div>
-      </div>
+    <div class="flex gap-4 mb-6 border-b border-gray-800">
+      <button id="tabMiner" class="tab-btn text-sm font-bold px-4 py-2 text-gray-400 border-b-2 border-transparent hover:text-yellow-400" data-panel="miner-panel">Miner</button>
+      <button id="tabPool" class="tab-btn text-sm font-bold px-4 py-2 text-gray-400 border-b-2 border-transparent hover:text-yellow-400" data-panel="pool-panel">Pool</button>
+      <button id="tabNode" class="tab-btn text-sm font-bold px-4 py-2 text-gray-400 border-b-2 border-transparent hover:text-yellow-400" data-panel="node-panel">Node</button>
     </div>
 
-    <div class="bg-gray-900 border border-gray-800 rounded p-4 mb-6">
-      <h2 class="text-sm text-gray-500 uppercase mb-3">Configuration</h2>
-      <form id="configForm" class="space-y-3">
-        <div>
-          <label class="text-xs text-gray-500 block mb-1">Wallet</label>
-          <input name="wallet" class="w-full bg-gray-950 border border-gray-800 rounded px-3 py-2 text-sm text-gray-100 focus:outline-none focus:border-yellow-600" required>
+    <div id="miner-panel" class="tab-panel">
+      <div class="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6" id="stats">
+        <div class="bg-gray-900 border border-gray-800 rounded p-4">
+          <div class="text-xs text-gray-500 uppercase">Hashrate</div>
+          <div class="text-xl font-bold text-green-400" id="hashrate">-</div>
         </div>
-        <div>
-          <label class="text-xs text-gray-500 block mb-1">Pool</label>
-          <input name="pool" class="w-full bg-gray-950 border border-gray-800 rounded px-3 py-2 text-sm text-gray-100 focus:outline-none focus:border-yellow-600" required>
+        <div class="bg-gray-900 border border-gray-800 rounded p-4">
+          <div class="text-xs text-gray-500 uppercase">Accepted</div>
+          <div class="text-xl font-bold text-blue-400" id="accepted">-</div>
         </div>
-        <div>
-          <label class="text-xs text-gray-500 block mb-1">Workers</label>
-          <input name="workers" type="number" min="1" max="64" class="w-full bg-gray-950 border border-gray-800 rounded px-3 py-2 text-sm text-gray-100 focus:outline-none focus:border-yellow-600" required>
+        <div class="bg-gray-900 border border-gray-800 rounded p-4">
+          <div class="text-xs text-gray-500 uppercase">Total Hashes</div>
+          <div class="text-xl font-bold text-purple-400" id="totalHashes">-</div>
         </div>
-        <button type="submit" class="bg-yellow-600 hover:bg-yellow-500 text-black font-bold px-4 py-2 rounded text-sm">Save & Restart</button>
-      </form>
+        <div class="bg-gray-900 border border-gray-800 rounded p-4">
+          <div class="text-xs text-gray-500 uppercase">Uptime</div>
+          <div class="text-xl font-bold text-cyan-400" id="uptime">-</div>
+        </div>
+        <div class="bg-gray-900 border border-gray-800 rounded p-4">
+          <div class="text-xs text-gray-500 uppercase">Status</div>
+          <div class="text-xl font-bold" id="status">-</div>
+        </div>
+      </div>
+
+      <div class="flex gap-4 mb-6">
+        <div class="flex flex-col gap-2">
+          <button id="btnStart" class="bg-green-700 hover:bg-green-600 px-3 py-2 rounded text-sm font-bold disabled:opacity-50 whitespace-nowrap" title="Start">1 &#9654;</button>
+          <button id="btnStop" class="bg-red-700 hover:bg-red-600 px-3 py-2 rounded text-sm font-bold disabled:opacity-50 whitespace-nowrap" title="Stop">2 &#9632;</button>
+          <button id="btnRestart" class="bg-blue-700 hover:bg-blue-600 px-3 py-2 rounded text-sm font-bold disabled:opacity-50 whitespace-nowrap" title="Restart">3 &#8635;</button>
+        </div>
+        <div class="bg-gray-900 border border-gray-800 rounded p-4 flex-1">
+          <h2 class="text-sm text-gray-500 uppercase mb-3">Configuration</h2>
+          <form id="configForm" class="space-y-3">
+            <div>
+              <label class="text-xs text-gray-500 block mb-1">Wallet</label>
+              <input name="wallet" class="w-full bg-gray-950 border border-gray-800 rounded px-3 py-2 text-sm text-gray-100 focus:outline-none focus:border-yellow-600" required>
+            </div>
+            <div>
+              <label class="text-xs text-gray-500 block mb-1">Pool</label>
+              <input name="pool" class="w-full bg-gray-950 border border-gray-800 rounded px-3 py-2 text-sm text-gray-100 focus:outline-none focus:border-yellow-600" required>
+            </div>
+            <div>
+              <label class="text-xs text-gray-500 block mb-1">Workers</label>
+              <input name="workers" type="number" min="1" max="64" class="w-full bg-gray-950 border border-gray-800 rounded px-3 py-2 text-sm text-gray-100 focus:outline-none focus:border-yellow-600" required>
+            </div>
+            <button type="submit" class="bg-yellow-600 hover:bg-yellow-500 text-black font-bold px-4 py-2 rounded text-sm">Save & Restart</button>
+          </form>
+        </div>
+      </div>
+
     </div>
 
-    <div class="flex gap-3 mb-6">
-      <button id="btnStart" class="bg-green-700 hover:bg-green-600 px-4 py-2 rounded text-sm font-bold disabled:opacity-50">Start</button>
-      <button id="btnStop" class="bg-red-700 hover:bg-red-600 px-4 py-2 rounded text-sm font-bold disabled:opacity-50">Stop</button>
-      <button id="btnRestart" class="bg-blue-700 hover:bg-blue-600 px-4 py-2 rounded text-sm font-bold disabled:opacity-50">Restart</button>
+    <div id="pool-panel" class="tab-panel hidden">
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+        <div class="bg-gray-900 border border-gray-800 rounded p-4">
+          <div class="text-xs text-gray-500 uppercase">Pool</div>
+          <div class="text-lg font-bold text-cyan-400 truncate" id="poolAddr" title="-">-</div>
+        </div>
+        <div class="bg-gray-900 border border-gray-800 rounded p-4">
+          <div class="text-xs text-gray-500 uppercase">Wallet</div>
+          <div class="text-lg font-bold text-yellow-400 truncate" id="poolWallet" title="-">-</div>
+        </div>
+        <div class="bg-gray-900 border border-gray-800 rounded p-4">
+          <div class="text-xs text-gray-500 uppercase">Worker</div>
+          <div class="text-lg font-bold text-blue-400" id="poolWorker">-</div>
+        </div>
+        <div class="bg-gray-900 border border-gray-800 rounded p-4">
+          <div class="text-xs text-gray-500 uppercase">Shares</div>
+          <div class="text-lg font-bold text-green-400" id="poolShares">-</div>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+        <div class="bg-gray-900 border border-gray-800 rounded p-4">
+          <div class="text-xs text-gray-500 uppercase">Hashrate</div>
+          <div class="text-lg font-bold text-purple-400" id="poolHashrate">-</div>
+        </div>
+        <div class="bg-gray-900 border border-gray-800 rounded p-4">
+          <div class="text-xs text-gray-500 uppercase">Total Hashes</div>
+          <div class="text-lg font-bold text-gray-300" id="poolTotalHashes">-</div>
+        </div>
+        <div class="bg-gray-900 border border-gray-800 rounded p-4">
+          <div class="text-xs text-gray-500 uppercase">Uptime</div>
+          <div class="text-lg font-bold text-cyan-400" id="poolUptime">-</div>
+        </div>
+        <div class="bg-gray-900 border border-gray-800 rounded p-4">
+          <div class="text-xs text-gray-500 uppercase">Height</div>
+          <div class="text-lg font-bold text-orange-400" id="poolHeight">-</div>
+        </div>
+      </div>
+
+      <div class="bg-gray-900 border border-gray-800 rounded p-4">
+        <h2 class="text-sm text-gray-500 uppercase mb-3">Last Block</h2>
+        <div class="grid grid-cols-3 gap-4">
+          <div>
+            <div class="text-xs text-gray-500 uppercase">Height</div>
+            <div class="text-lg font-bold text-orange-400" id="poolLastBlockHeight">-</div>
+          </div>
+          <div class="col-span-2">
+            <div class="text-xs text-gray-500 uppercase">Hash</div>
+            <div class="text-sm font-mono text-gray-300 truncate" id="poolLastBlockHash" title="-">-</div>
+          </div>
+        </div>
+        <div class="mt-2">
+          <div class="text-xs text-gray-500 uppercase">Time</div>
+          <div class="text-sm text-gray-400" id="poolLastBlockTime">-</div>
+        </div>
+      </div>
+
+      <a id="poolOpenBtn" href="http://127.0.0.1:3001" target="_blank" rel="noopener noreferrer" class="hidden mt-4 bg-yellow-600 hover:bg-yellow-500 text-black text-center font-bold px-4 py-2 rounded text-sm inline-block disabled:opacity-50">Open Pool</a>
+    </div>
+
+    <div id="node-panel" class="tab-panel hidden">
+      <div class="grid grid-cols-3 gap-4 mb-6">
+        <div class="bg-gray-900 border border-gray-800 rounded p-4">
+          <div class="text-xs text-gray-500 uppercase">Port</div>
+          <div class="text-xl font-bold text-cyan-400" id="nodePort">-</div>
+        </div>
+        <div class="bg-gray-900 border border-gray-800 rounded p-4">
+          <div class="text-xs text-gray-500 uppercase">Peers</div>
+          <div class="text-xl font-bold text-purple-400" id="nodePeerCount">-</div>
+        </div>
+        <div class="bg-gray-900 border border-gray-800 rounded p-4">
+          <div class="text-xs text-gray-500 uppercase">Status</div>
+          <div class="text-xl font-bold text-green-400" id="nodeStatus">-</div>
+        </div>
+      </div>
+
+      <div class="bg-gray-900 border border-gray-800 rounded p-4 mb-6">
+        <h2 class="text-sm text-gray-500 uppercase mb-3">Add Peer</h2>
+        <form id="addPeerForm" class="flex gap-3">
+          <input name="addr" placeholder="IP:Port" class="flex-1 bg-gray-950 border border-gray-800 rounded px-3 py-2 text-sm text-gray-100 focus:outline-none focus:border-yellow-600">
+          <button type="submit" class="bg-yellow-600 hover:bg-yellow-500 text-black font-bold px-4 py-2 rounded text-sm">Add</button>
+        </form>
+      </div>
+
+      <div class="bg-gray-900 border border-gray-800 rounded p-4">
+        <h2 class="text-sm text-gray-500 uppercase mb-3">Connected Peers</h2>
+        <div id="peerList" class="text-sm text-gray-400">No peers connected</div>
+      </div>
     </div>
   </div>
 
   <script>
     const $ = id => document.getElementById(id);
+
+    // Tabs
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.tab-btn').forEach(b => {
+          b.classList.remove('text-yellow-400', 'border-yellow-400');
+          b.classList.add('text-gray-400', 'border-transparent');
+        });
+        btn.classList.remove('text-gray-400', 'border-transparent');
+        btn.classList.add('text-yellow-400', 'border-yellow-400');
+
+        document.querySelectorAll('.tab-panel').forEach(p => p.classList.add('hidden'));
+        $(btn.dataset.panel).classList.remove('hidden');
+      });
+    });
+    $('tabMiner').click();
 
     async function fetchStats() {
       try {
@@ -159,6 +275,89 @@
       $('btnRestart').disabled = !running;
     }
 
+    // Pool
+    async function fetchPoolData() {
+      try {
+        const res = await fetch('/api/stats');
+        const d = await res.json();
+        const poolUrl = d.poolAddress || '';
+        $('poolAddr').textContent = poolUrl || '-';
+        $('poolAddr').title = poolUrl || '-';
+        const btn = $('poolOpenBtn');
+        if (poolUrl) {
+          btn.href = poolUrl.startsWith('http') ? poolUrl : 'http://' + poolUrl;
+          btn.classList.remove('hidden');
+        } else {
+          btn.classList.add('hidden');
+        }
+        $('poolWallet').textContent = d.walletAddress || '-';
+        $('poolWallet').title = d.walletAddress || '-';
+        $('poolWorker').textContent = d.workerName || '-';
+        $('poolShares').textContent = (d.acceptedShares || 0).toLocaleString();
+        $('poolHashrate').textContent = formatHashrate(d.hashRate);
+        $('poolTotalHashes').textContent = (d.totalHashes || 0).toLocaleString();
+        $('poolUptime').textContent = formatUptime(d.uptimeSeconds || 0);
+        $('poolHeight').textContent = d.height ? '#' + d.height.toLocaleString() : '-';
+        $('poolLastBlockHeight').textContent = d.lastBlockHeight ? '#' + d.lastBlockHeight.toLocaleString() : 'none yet';
+        $('poolLastBlockHash').textContent = d.lastBlockHash || '-';
+        $('poolLastBlockHash').title = d.lastBlockHash || '-';
+        $('poolLastBlockTime').textContent = d.lastBlockTime || '-';
+      } catch (e) {}
+    }
+
+    // Node
+    async function fetchNodeStatus() {
+      try {
+        const res = await fetch('/api/pool/status');
+        const data = await res.json();
+        $('nodePort').textContent = data.port || '-';
+        $('nodePeerCount').textContent = (data.peerCount || 0).toLocaleString();
+        $('nodeStatus').textContent = data.running ? 'RUNNING' : 'STOPPED';
+      } catch (e) {}
+    }
+
+    async function fetchNodePeers() {
+      try {
+        const res = await fetch('/api/pool/peers');
+        const data = await res.json();
+        const el = $('peerList');
+        if (!data || data.length === 0) {
+          el.innerHTML = '<span class="text-gray-500">No peers connected</span>';
+          return;
+        }
+        el.innerHTML = data.map(p =>
+          '<div class="flex justify-between py-1 border-b border-gray-800 last:border-0">' +
+            '<span>' + p.addr + '</span>' +
+            '<span class="text-gray-500">' + p.status + '</span>' +
+          '</div>'
+        ).join('');
+      } catch (e) {}
+    }
+
+    $('addPeerForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const addr = e.target.querySelector('input[name="addr"]').value.trim();
+      if (!addr) return;
+      try {
+        const res = await fetch('/api/pool/peers', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ addr })
+        });
+        const result = await res.json();
+        if (result.status === 'ok') {
+          $('success').textContent = 'Peer added: ' + addr;
+          $('success').classList.remove('hidden');
+          setTimeout(() => $('success').classList.add('hidden'), 2000);
+          e.target.querySelector('input[name="addr"]').value = '';
+          fetchNodePeers();
+        }
+      } catch (e) {
+        $('error').textContent = 'Failed to add peer';
+        $('error').classList.remove('hidden');
+      }
+    });
+
     function formatHashrate(h) {
       if (!h || h <= 0) return '0 H/s';
       h = Number(h);
@@ -193,7 +392,13 @@
 
     fetchConfig();
     fetchStats();
+    fetchPoolData();
+    fetchNodeStatus();
+    fetchNodePeers();
     setInterval(fetchStats, 5000);
+    setInterval(fetchPoolData, 5000);
+    setInterval(fetchNodeStatus, 10000);
+    setInterval(fetchNodePeers, 10000);
   </script>
 </body>
 </html>
