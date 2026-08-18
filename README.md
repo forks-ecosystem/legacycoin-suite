@@ -104,26 +104,27 @@ The embedded web server provides:
 
 ## Scripts
 
-All scripts use `__` prefix to appear at the top of `ls` output.
+Scripts use underscore prefix to appear at the top of `ls` output.
+Double `__` for essential management scripts, single `_` for utilities.
 
-### Management
+### Management (`__`)
 
 | Script | Description |
 |--------|-------------|
 | `__up.sh` | Start container and show status |
 | `__down.sh` | Stop container |
 
-### Installation
+### Installation (`_`)
 
 | Script | Description | Installs to |
 |--------|-------------|-------------|
-| `__git_LegacyCore.sh` | Build legacycoind + legacycoin-cli | `/app/LegacyCore` |
-| `__git_legacycoin-explorer.sh` | Build block explorer | `/app/legacycoin-explorer` |
-| `__git_legasybtc-pool.sh` | Install mining pool | `/app/legacybtc-pool` |
+| `_git_LegacyCore.sh` | Build legacycoind + legacycoin-cli | `/app/LegacyCore` |
+| `_git_legacycoin-explorer.sh` | Build block explorer | `/app/legacycoin-explorer` |
+| `_git_legasybtc-pool.sh` | Install mining pool | `/app/legacybtc-pool` |
 
-### Utility
+### Utility (`_`)
 
 | Script | Description |
 |--------|-------------|
-| `__port_check.sh` | Check port availability |
-| `__set_all.sh` | Set all environment variables |
+| `_port_check.sh` | Check port availability |
+| `_set_all.sh` | Set all environment variables |
