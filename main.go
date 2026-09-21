@@ -114,6 +114,12 @@ func main() {
 		w.Write([]byte(adminHTML))
 	}
 
+	writeJSONError := func(w http.ResponseWriter, status int, msg string) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(status)
+		json.NewEncoder(w).Encode(map[string]string{"error": msg})
+	}
+
 	mux.HandleFunc("/admin/", func(w http.ResponseWriter, r *http.Request) {
 		path := strings.TrimPrefix(r.URL.Path, "/admin/")
 		switch path {
@@ -130,12 +136,12 @@ func main() {
 				Password string `json:"password"`
 			}
 			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-				http.Error(w, err.Error(), http.StatusBadRequest)
+				writeJSONError(w, http.StatusBadRequest, err.Error())
 				return
 			}
 			token, err := adminAuth.Setup(req.Login, req.Password)
 			if err != nil {
-				http.Error(w, err.Error(), http.StatusBadRequest)
+				writeJSONError(w, http.StatusBadRequest, err.Error())
 				return
 			}
 			w.Header().Set("Content-Type", "application/json")
@@ -150,12 +156,12 @@ func main() {
 				Password string `json:"password"`
 			}
 			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-				http.Error(w, err.Error(), http.StatusBadRequest)
+				writeJSONError(w, http.StatusBadRequest, err.Error())
 				return
 			}
 			token, err := adminAuth.Login(req.Login, req.Password)
 			if err != nil {
-				http.Error(w, err.Error(), http.StatusUnauthorized)
+				writeJSONError(w, http.StatusUnauthorized, err.Error())
 				return
 			}
 			w.Header().Set("Content-Type", "application/json")
@@ -168,7 +174,7 @@ func main() {
 			token := r.Header.Get("Authorization")
 			token = strings.TrimPrefix(token, "Bearer ")
 			if err := adminAuth.Logout(token); err != nil {
-				http.Error(w, err.Error(), http.StatusUnauthorized)
+				writeJSONError(w, http.StatusUnauthorized, err.Error())
 				return
 			}
 			w.Header().Set("Content-Type", "application/json")
@@ -181,7 +187,7 @@ func main() {
 					adminServeHTML(w)
 					return
 				}
-				http.Error(w, "unauthorized", http.StatusUnauthorized)
+				writeJSONError(w, http.StatusUnauthorized, "unauthorized")
 				return
 			}
 			w.Header().Set("Content-Type", "application/json")
@@ -192,11 +198,11 @@ func main() {
 			case "POST":
 				var newCfg Config
 				if err := json.NewDecoder(r.Body).Decode(&newCfg); err != nil {
-					http.Error(w, err.Error(), http.StatusBadRequest)
+					writeJSONError(w, http.StatusBadRequest, err.Error())
 					return
 				}
 				if err := saveConfig(newCfg); err != nil {
-					http.Error(w, err.Error(), http.StatusInternalServerError)
+					writeJSONError(w, http.StatusInternalServerError, err.Error())
 					return
 				}
 				json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
@@ -214,11 +220,11 @@ func main() {
 				Password string `json:"password"`
 			}
 			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-				http.Error(w, err.Error(), http.StatusBadRequest)
+				writeJSONError(w, http.StatusBadRequest, err.Error())
 				return
 			}
 			if err := adminAuth.UpdatePassword(token, req.Password); err != nil {
-				http.Error(w, err.Error(), http.StatusUnauthorized)
+				writeJSONError(w, http.StatusUnauthorized, err.Error())
 				return
 			}
 			w.Header().Set("Content-Type", "application/json")
@@ -231,11 +237,51 @@ func main() {
 					adminServeHTML(w)
 					return
 				}
-				http.Error(w, "unauthorized", http.StatusUnauthorized)
+				writeJSONError(w, http.StatusUnauthorized, "unauthorized")
 				return
 			}
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(GetWalletInfo())
+		case "wallet/send":
+			token := r.Header.Get("Authorization")
+			token = strings.TrimPrefix(token, "Bearer ")
+			if !adminAuth.VerifySession(token) {
+				writeJSONError(w, http.StatusUnauthorized, "unauthorized")
+				return
+			}
+			if r.Method != http.MethodPost {
+				writeJSONError(w, http.StatusMethodNotAllowed, "POST required")
+				return
+			}
+			var req struct {
+				Address string  `json:"address"`
+				Amount  float64 `json:"amount"`
+				FeeSet  bool    `json:"-"`
+				Fee     float64 `json:"fee"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				writeJSONError(w, http.StatusBadRequest, "bad request: "+err.Error())
+				return
+			}
+			if strings.TrimSpace(req.Address) == "" {
+				writeJSONError(w, http.StatusBadRequest, "address is required")
+				return
+			}
+			if req.Amount <= 0 {
+				writeJSONError(w, http.StatusBadRequest, "amount must be > 0")
+				return
+			}
+			params := []interface{}{req.Address, req.Amount}
+			if req.Fee > 0 {
+				params = append(params, req.Fee)
+			}
+			res, err := rpcCall("sendtoaddress", params)
+			if err != nil {
+				writeJSONError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.Write(res)
 		default:
 			adminServeHTML(w)
 		}
@@ -317,6 +363,10 @@ func main() {
 	})
 
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		if !adminAuth.isConfigured() {
+			http.Redirect(w, r, "/admin/", http.StatusFound)
+			return
+		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.Write([]byte(dashboardHTML))
 	})

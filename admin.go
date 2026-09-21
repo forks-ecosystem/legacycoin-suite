@@ -1,16 +1,20 @@
 package main
 
 import (
+	"bytes"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
+	"net/http"
 	"os"
-	"os/exec"
+	"sort"
 	"strings"
 	"sync"
+	"time"
 )
 
 const adminConfigFile = "config/admin.json"
@@ -83,8 +87,8 @@ func (a *AdminAuth) Setup(login, password string) (string, error) {
 	if a.isConfigured() {
 		return "", fmt.Errorf("admin already configured")
 	}
-	if len(password) < 6 {
-		return "", fmt.Errorf("password must be at least 6 characters")
+	if len(password) < 3 {
+		return "", fmt.Errorf("password must be at least 3 characters")
 	}
 
 	token := generateToken()
@@ -159,22 +163,64 @@ func (a *AdminAuth) UpdatePassword(token, newPassword string) error {
 	if cfg.SessionToken != token {
 		return fmt.Errorf("invalid session")
 	}
-	if len(newPassword) < 6 {
-		return fmt.Errorf("password must be at least 6 characters")
+	if len(newPassword) < 3 {
+		return fmt.Errorf("password must be at least 3 characters")
 	}
 	cfg.PasswordHash = hashPassword(newPassword)
 	return a.saveConfig(cfg)
 }
 
-func isNodeRunning() bool {
-	cmd := exec.Command("pgrep", "-x", "legacycoind")
-	return cmd.Run() == nil
+func rpcEnv(key, def string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return def
 }
 
-func runCLI(args ...string) (string, error) {
-	cmd := exec.Command("legacycoin-cli", args...)
-	out, err := cmd.CombinedOutput()
-	return strings.TrimSpace(string(out)), err
+func rpcCall(method string, params []interface{}) (json.RawMessage, error) {
+	body, err := json.Marshal(map[string]interface{}{
+		"jsonrpc": "1.0", "id": 1, "method": method, "params": params,
+	})
+	if err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequest(http.MethodPost, rpcEnv("LEGACYCOIN_RPC_URL", "http://127.0.0.1:19556"), bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "text/plain")
+	req.SetBasicAuth(rpcEnv("LEGACYCOIN_RPC_USER", "coin"), rpcEnv("LEGACYCOIN_RPC_PASS", "coin"))
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+		return nil, fmt.Errorf("rpc http %d: %s", resp.StatusCode, strings.TrimSpace(string(b)))
+	}
+
+	var rr struct {
+		Result json.RawMessage `json:"result"`
+		Error  *struct {
+			Code    int    `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&rr); err != nil {
+		return nil, err
+	}
+	if rr.Error != nil {
+		return nil, fmt.Errorf("rpc %s: %s", method, rr.Error.Message)
+	}
+	return rr.Result, nil
+}
+
+func rpcFetch(params ...interface{}) (json.RawMessage, error) {
+	return rpcCall("getwalletsummary", params)
 }
 
 func getScriptInfo() string {
@@ -193,34 +239,99 @@ func getScriptInfo() string {
 
 func GetWalletInfo() map[string]interface{} {
 	result := map[string]interface{}{
-		"nodeRunning": isNodeRunning(),
+		"nodeRunning": false,
 	}
 
-	if !result["nodeRunning"].(bool) {
+	if _, err := rpcCall("getblockcount", []interface{}{}); err != nil {
 		result["script"] = getScriptInfo()
 		return result
 	}
+	result["nodeRunning"] = true
 
-	if out, err := runCLI("getwalletinfo"); err == nil {
-		var info map[string]interface{}
-		if json.Unmarshal([]byte(out), &info) == nil {
-			result["walletinfo"] = info
-		}
-	}
-
-	if out, err := runCLI("getbalance"); err == nil {
+	if r, err := rpcCall("getbalance", []interface{}{}); err == nil {
 		var balance float64
-		if json.Unmarshal([]byte(out), &balance) == nil {
+		if json.Unmarshal(r, &balance) == nil {
 			result["balance"] = balance
 		}
 	}
 
-	if out, err := runCLI("getwalletsummary"); err == nil {
-		var summary map[string]interface{}
-		if json.Unmarshal([]byte(out), &summary) == nil {
-			result["summary"] = summary
+	if r, err := rpcFetch(); err == nil {
+		var s struct {
+			Spendable        int64             `json:"spendable"`
+			Immature         int64             `json:"immature"`
+			AddressByHash    map[string]string `json:"address_by_pubkey_hash"`
+			Wallet           *struct {
+				ClassicKeys int `json:"classic_keys"`
+			} `json:"wallet"`
+			SpendableOutputs []json.RawMessage `json:"spendable_outputs"`
+			ImmatureOutputs  []json.RawMessage `json:"immature_outputs"`
+		}
+		if json.Unmarshal(r, &s) == nil {
+			result["summary"] = map[string]interface{}{
+				"balance":             float64(s.Spendable) / 1e8,
+				"unconfirmed_balance": float64(0),
+				"immature_balance":    float64(s.Immature) / 1e8,
+			}
+
+			walletinfo := map[string]interface{}{
+				"address": dominantWalletAddress(s.SpendableOutputs, s.ImmatureOutputs, s.AddressByHash),
+				"label":   "mining",
+			}
+			if s.Wallet != nil {
+				walletinfo["keypoolsize"] = s.Wallet.ClassicKeys
+			}
+			walletinfo["txcount"] = countWalletTxids(s.SpendableOutputs, s.ImmatureOutputs)
+			result["walletinfo"] = walletinfo
 		}
 	}
 
 	return result
+}
+
+func dominantWalletAddress(spendable, immature []json.RawMessage, byHash map[string]string) string {
+	counts := map[string]int{}
+	for _, list := range [][]json.RawMessage{spendable, immature} {
+		for _, o := range list {
+			var e struct {
+				Address string `json:"address"`
+			}
+			if json.Unmarshal(o, &e) == nil && e.Address != "" {
+				counts[e.Address]++
+			}
+		}
+	}
+	best := ""
+	bestCount := 0
+	for addr, n := range counts {
+		if n > bestCount || (n == bestCount && addr < best) {
+			best, bestCount = addr, n
+		}
+	}
+	if best != "" {
+		return best
+	}
+	keys := make([]string, 0, len(byHash))
+	for k := range byHash {
+		keys = append(keys, k)
+	}
+	if len(keys) == 0 {
+		return ""
+	}
+	sort.Strings(keys)
+	return byHash[keys[0]]
+}
+
+func countWalletTxids(lists ...[]json.RawMessage) int {
+	set := map[string]struct{}{}
+	for _, list := range lists {
+		for _, o := range list {
+			var e struct {
+				TxID string `json:"txid"`
+			}
+			if json.Unmarshal(o, &e) == nil && e.TxID != "" {
+				set[e.TxID] = struct{}{}
+			}
+		}
+	}
+	return len(set)
 }

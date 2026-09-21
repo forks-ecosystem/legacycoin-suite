@@ -13,7 +13,7 @@ services:
       WORKERS: ${WORKERS:-4}
     volumes:
       - /etc/forkex/legacycoin-suite/config.json:/app/config.json:ro
-      - /app/legacycoin-suite/config/admin.json:/app/config/admin.json
+      - /app/legacycoin-suite/config:/app/config
       - /app/legacybtc-pool/_git_LegacyCore.sh:/app/_git_LegacyCore.sh:ro
       - /var/lib/forkex/legacycoin-suite:/app/tmp
       - /var/log/forkex/legacycoin-suite:/app/logs

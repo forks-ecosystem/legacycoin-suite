@@ -12,19 +12,124 @@
     --red: #ef4444; --green: #22c55e; --yellow: #eab308;
   }
   body { font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace; background: var(--bg); color: var(--fg); min-height: 100vh; }
-  .center { display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 1rem; }
-  .card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 2rem; width: 100%; max-width: 400px; }
-  .card h1 { font-size: 1.25rem; margin-bottom: 0.25rem; }
-  .card p.sub { font-size: 0.8rem; color: var(--muted); margin-bottom: 1.5rem; }
-  .field { margin-bottom: 1rem; }
-  .field label { display: block; font-size: 0.75rem; margin-bottom: 0.35rem; color: var(--fg); }
-  .field input { width: 100%; padding: 0.6rem 0.75rem; background: var(--bg); border: 1px solid var(--border); border-radius: 4px; color: var(--fg); font-family: inherit; font-size: 0.85rem; outline: none; }
-  .field input:focus { border-color: var(--primary); }
-  .btn { width: 100%; padding: 0.65rem; background: var(--primary); color: var(--primary-fg); border: none; border-radius: 4px; font-family: inherit; font-size: 0.85rem; cursor: pointer; margin-top: 0.5rem; }
-  .btn:hover { opacity: 0.9; }
+  .center { display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 20px; }
+
+  /* ——— Custom setup/auth box (template: node-adm-start) ——— */
+  .setup-box {
+    background: #161b22;
+    border: 1px solid #2a3340;
+    border-radius: 16px;
+    padding: 40px 36px 32px;
+    max-width: 400px;
+    width: 100%;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.5);
+  }
+  .setup-header { text-align: left; margin-bottom: 28px; }
+  .setup-header .icon { font-size: 40px; display: block; margin-bottom: 6px; }
+  .setup-header h1 { color: #f0f2f5; font-size: 20px; font-weight: 600; font-family: system-ui, -apple-system, sans-serif; }
+  .setup-header p { color: #8b949e; font-size: 13px; margin-top: 4px; font-family: system-ui, -apple-system, sans-serif; }
+
+  .field { margin-bottom: 16px; }
+  .field label { display: block; color: #8b94a3; font-size: 12px; font-weight: 500; margin-bottom: 4px; font-family: system-ui, -apple-system, sans-serif; }
+
+  .password-wrap { position: relative; }
+  .password-wrap .display-input {
+    width: 100%;
+    padding: 10px 14px;
+    background: #0d1117;
+    border: 1px solid #30363d;
+    border-radius: 8px;
+    color: #e1e4e8;
+    font-size: 18px;
+    font-family: 'Courier New', monospace;
+    letter-spacing: 6px;
+    outline: none;
+    transition: border-color 0.15s;
+    caret-color: transparent;
+  }
+  .password-wrap .display-input:focus { border-color: #58a6ff; }
+  .password-wrap .display-input.error { border-color: #f85149; }
+  .password-wrap .display-input::selection { background: transparent; }
+
+  .password-wrap .hidden-storage { display: none; }
+
+  .password-wrap .placeholder-text {
+    position: absolute;
+    left: 14px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #484f58;
+    font-size: 14px;
+    pointer-events: none;
+    z-index: 1;
+    letter-spacing: 0;
+    font-family: system-ui, -apple-system, sans-serif;
+    transition: opacity 0.15s;
+  }
+  .password-wrap .placeholder-text.hidden { opacity: 0; }
+
+  .field input[type="text"] {
+    width: 100%;
+    padding: 10px 14px;
+    background: #0d1117;
+    border: 1px solid #30363d;
+    border-radius: 8px;
+    color: #e1e4e8;
+    font-size: 14px;
+    outline: none;
+    transition: border-color 0.15s;
+    font-family: system-ui, -apple-system, sans-serif;
+  }
+  .field input[type="text"]:focus { border-color: #58a6ff; }
+  .field input[type="text"].error { border-color: #f85149; }
+
+  .field .error-text { color: #f85149; font-size: 11px; margin-top: 3px; display: none; font-family: system-ui, -apple-system, sans-serif; }
+  .field .error-text.show { display: block; }
+
+  .btn {
+    width: 130px;
+    padding: 12px;
+    border: none;
+    border-radius: 8px;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    background: #1f6feb;
+    color: #fff;
+    transition: background 0.15s;
+    margin-top: 4px;
+    font-family: system-ui, -apple-system, sans-serif;
+  }
+  .btn:hover { background: #388bfd; }
   .btn:disabled { opacity: 0.5; cursor: not-allowed; }
-  .error { color: var(--red); font-size: 0.8rem; text-align: center; margin-top: 0.75rem; }
-  .success { color: var(--green); font-size: 0.8rem; text-align: center; margin-top: 0.75rem; }
+
+  .alert {
+    padding: 10px 14px;
+    border-radius: 8px;
+    margin-bottom: 16px;
+    font-size: 13px;
+    background: #3d1418;
+    color: #f85149;
+    border: 1px solid #da3633;
+    display: none;
+    font-family: system-ui, -apple-system, sans-serif;
+  }
+  .alert.show { display: block; }
+  .alert li { list-style: none; }
+
+  .loading { display: none; text-align: center; color: #8b94a3; font-size: 13px; margin-top: 12px; font-family: system-ui, -apple-system, sans-serif; }
+  .loading.show { display: block; }
+  .spinner {
+    display: inline-block;
+    width: 16px;
+    height: 16px;
+    border: 2px solid #30363d;
+    border-top-color: #58a6ff;
+    border-radius: 50%;
+    animation: spin 0.6s linear infinite;
+    vertical-align: -3px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
 
   /* Dashboard */
   .dashboard { display: flex; min-height: 100vh; }
@@ -37,6 +142,11 @@
   .sidebar-footer { padding: 0.75rem 1rem; border-top: 1px solid var(--border); }
   .sidebar-footer button { width: 100%; padding: 0.4rem; background: none; border: 1px solid var(--border); color: var(--muted); font-family: inherit; font-size: 0.75rem; border-radius: 4px; cursor: pointer; }
   .sidebar-footer button:hover { background: var(--bg); color: var(--fg); }
+  .body-col { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  .topbar { display: flex; align-items: center; justify-content: space-between; padding: 0.75rem 1.5rem; background: var(--card); border-bottom: 1px solid var(--border); }
+  .topbar .ttl { font-weight: bold; font-size: 0.9rem; }
+  .btn-logout { padding: 0.45rem 1rem; background: none; border: 1px solid var(--border); color: var(--muted); font-family: inherit; font-size: 0.8rem; border-radius: 6px; cursor: pointer; }
+  .btn-logout:hover { background: rgba(239,68,68,0.12); border-color: var(--red); color: var(--red); }
   .main { flex: 1; padding: 1.5rem; overflow-y: auto; }
   .main h2 { font-size: 1.1rem; margin-bottom: 0.25rem; }
   .main p.desc { font-size: 0.8rem; color: var(--muted); margin-bottom: 1.25rem; }
@@ -53,30 +163,70 @@
 
 <!-- Setup -->
 <div id="view-setup" class="center" style="display:none">
-  <div class="card">
-    <h1>Admin Setup</h1>
-    <p class="sub">Create your admin credentials</p>
-    <form id="form-setup">
-      <div class="field"><label>Login</label><input id="setup-login" autofocus></div>
-      <div class="field"><label>Password</label><input type="password" id="setup-pass"></div>
-      <div class="field"><label>Confirm Password</label><input type="password" id="setup-confirm"></div>
-      <button type="submit" class="btn">Create Admin</button>
-      <div id="setup-error" class="error" style="display:none"></div>
-    </form>
+  <div class="setup-box">
+    <div class="setup-header">
+      <span class="icon">⚙️</span>
+      <h1>Admin Setup</h1>
+      <p>Create your admin credentials</p>
+    </div>
+    <div class="alert" id="setup-alert"></div>
+    <div id="setupContainer">
+      <div class="field">
+        <label>Login</label>
+        <input type="text" id="setup-login" autofocus>
+        <div class="error-text" id="setup-loginError">Enter login</div>
+      </div>
+      <div class="field">
+        <label>Password</label>
+        <div class="password-wrap">
+          <input type="text" class="display-input" id="setup-passDisplay" autocomplete="off" maxlength="32">
+          <input type="text" class="hidden-storage" id="setup-passStorage" style="display:none">
+          <span class="placeholder-text" id="setup-passPlaceholder" style="display:none"></span>
+        </div>
+        <div class="error-text" id="setup-passError">Minimum 3 characters</div>
+      </div>
+      <div class="field">
+        <label>Confirm Password</label>
+        <div class="password-wrap">
+          <input type="text" class="display-input" id="setup-confirmDisplay" autocomplete="off" maxlength="32">
+          <input type="text" class="hidden-storage" id="setup-confirmStorage" style="display:none">
+          <span class="placeholder-text" id="setup-confirmPlaceholder" style="display:none"></span>
+        </div>
+        <div class="error-text" id="setup-confirmError">Passwords do not match</div>
+      </div>
+      <button class="btn" id="setupSubmitBtn">Create Admin</button>
+      <div class="loading" id="setupLoading"><span class="spinner"></span> Saving...</div>
+    </div>
   </div>
 </div>
 
 <!-- Login -->
 <div id="view-login" class="center" style="display:none">
-  <div class="card">
-    <h1>Admin Login</h1>
-    <p class="sub">Miner administration</p>
-    <form id="form-login">
-      <div class="field"><label>Login</label><input id="login-user" autofocus></div>
-      <div class="field"><label>Password</label><input type="password" id="login-pass"></div>
-      <button type="submit" class="btn">Login</button>
-      <div id="login-error" class="error" style="display:none"></div>
-    </form>
+  <div class="setup-box">
+    <div class="setup-header">
+      <span class="icon">🔐</span>
+      <h1>Admin Login</h1>
+      <p>Miner administration</p>
+    </div>
+    <div class="alert" id="login-alert"></div>
+    <div id="loginContainer">
+      <div class="field">
+        <label>Login</label>
+        <input type="text" id="login-user" autofocus>
+        <div class="error-text" id="login-loginError">Enter login</div>
+      </div>
+      <div class="field">
+        <label>Password</label>
+        <div class="password-wrap">
+          <input type="text" class="display-input" id="login-passDisplay" autocomplete="off" maxlength="32">
+          <input type="text" class="hidden-storage" id="login-passStorage" style="display:none">
+          <span class="placeholder-text" id="login-passPlaceholder" style="display:none"></span>
+        </div>
+        <div class="error-text" id="login-passError">Enter password</div>
+      </div>
+      <button class="btn" id="loginSubmitBtn">Login</button>
+      <div class="loading" id="loginLoading"><span class="spinner"></span> Checking...</div>
+    </div>
   </div>
 </div>
 
@@ -87,7 +237,13 @@
     <nav id="sidebar-nav"></nav>
     <div class="sidebar-footer"><button onclick="doLogout()">Logout</button></div>
   </div>
-  <div class="main" id="main-content"></div>
+  <div class="body-col">
+    <div class="topbar">
+      <span class="ttl">Suite Admin</span>
+      <button class="btn-logout" onclick="doLogout()">↪ Logout</button>
+    </div>
+    <div class="main" id="main-content"></div>
+  </div>
 </div>
 
 <script>
@@ -118,38 +274,171 @@ async function init() {
   } catch { show('view-setup'); }
 }
 
-// Setup
-document.getElementById('form-setup').onsubmit = async (e) => {
-  e.preventDefault();
-  const login = document.getElementById('setup-login').value;
-  const pass = document.getElementById('setup-pass').value;
-  const confirm = document.getElementById('setup-confirm').value;
-  const errEl = document.getElementById('setup-error');
-  errEl.style.display = 'none';
-  if (pass !== confirm) { errEl.textContent = 'Passwords do not match'; errEl.style.display = ''; return; }
-  if (pass.length < 6) { errEl.textContent = 'Password must be at least 6 characters'; errEl.style.display = ''; return; }
+// ─── Custom masked password field (template: node-adm-start) ─────
+class PasswordField {
+  constructor(displayId, storageId, placeholderId) {
+    this.display = document.getElementById(displayId);
+    this.storage = document.getElementById(storageId);
+    this.placeholder = document.getElementById(placeholderId);
+    this.value = '';
+    this.init();
+  }
+  init() {
+    this.display.addEventListener('input', () => { this.updateDisplay(); });
+    this.display.addEventListener('keydown', this.onKeyDown.bind(this));
+    this.display.addEventListener('contextmenu', (e) => e.preventDefault());
+    this.updateDisplay();
+  }
+  onKeyDown(e) {
+    if (e.key === 'Backspace') {
+      e.preventDefault();
+      this.value = this.value.slice(0, -1);
+      this.storage.value = this.value;
+      this.updateDisplay();
+      return;
+    }
+    if (e.key === 'Delete') {
+      e.preventDefault();
+      this.value = '';
+      this.storage.value = '';
+      this.updateDisplay();
+      return;
+    }
+    if (e.key === 'v' && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      navigator.clipboard.readText().then(text => {
+        const clean = text.replace(/[^x20-x7E]/g, '').slice(0, 32);
+        this.value = clean;
+        this.storage.value = clean;
+        this.updateDisplay();
+      }).catch(() => {});
+      return;
+    }
+    if (e.key === 'a' && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      this.display.select();
+      return;
+    }
+    if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      e.preventDefault();
+      if (this.value.length >= 32) return;
+      this.value += e.key;
+      this.storage.value = this.value;
+      this.updateDisplay();
+    }
+  }
+  updateDisplay() {
+    this.display.value = '*'.repeat(this.value.length);
+    if (this.placeholder) {
+      if (this.value.length > 0) this.placeholder.classList.add('hidden');
+      else this.placeholder.classList.remove('hidden');
+    }
+  }
+  getValue() { return this.value; }
+}
+
+const setupPassField = new PasswordField('setup-passDisplay', 'setup-passStorage', 'setup-passPlaceholder');
+const setupConfirmField = new PasswordField('setup-confirmDisplay', 'setup-confirmStorage', 'setup-confirmPlaceholder');
+const loginPassField = new PasswordField('login-passDisplay', 'login-passStorage', 'login-passPlaceholder');
+
+function showAlert(id, msg) {
+  const el = document.getElementById(id);
+  el.innerHTML = msg;
+  el.className = 'alert show';
+}
+function hideAlert(id) {
+  const el = document.getElementById(id);
+  el.className = 'alert';
+  el.innerHTML = '';
+}
+function validateField(input, errorEl, condition) {
+  if (!condition) {
+    input.classList.add('error');
+    errorEl.classList.add('show');
+    return false;
+  }
+  input.classList.remove('error');
+  errorEl.classList.remove('show');
+  return true;
+}
+
+const setupLogin = document.getElementById('setup-login');
+const setupSubmitBtn = document.getElementById('setupSubmitBtn');
+const setupLoading = document.getElementById('setupLoading');
+
+async function parseRes(r) {
+  const text = await r.text();
+  if (!text) return {};
+  try { return JSON.parse(text); } catch { return { error: text }; }
+}
+
+async function submitSetup() {
+  hideAlert('setup-alert');
+  const login = setupLogin.value.trim();
+  const pass = setupPassField.getValue();
+  const confirm = setupConfirmField.getValue();
+
+  const okLogin = validateField(setupLogin, document.getElementById('setup-loginError'), login.length > 0);
+  const okPass = validateField(setupPassField.display, document.getElementById('setup-passError'), pass.length >= 3);
+  const okConfirm = validateField(setupConfirmField.display, document.getElementById('setup-confirmError'), pass === confirm && confirm.length >= 3);
+  if (!okLogin || !okPass || !okConfirm) return;
+
+  setupSubmitBtn.disabled = true;
+  setupLoading.classList.add('show');
   try {
     const r = await fetch(API+'/admin/setup', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({login, password:pass}) });
-    const d = await r.json();
-    if (r.ok) { sessionStorage.setItem('admin_token', d.token); token = d.token; await init(); }
-    else { errEl.textContent = d.error || 'Setup failed'; errEl.style.display = ''; }
-  } catch { errEl.textContent = 'Network error'; errEl.style.display = ''; }
-};
+    const d = await parseRes(r);
+    if (r.ok && d.token) { sessionStorage.setItem('admin_token', d.token); token = d.token; await init(); return; }
+    showAlert('setup-alert', '• ' + (d.error || 'Setup failed'));
+  } catch (e) {
+    showAlert('setup-alert', '• Network error: ' + e.message);
+  }
+  setupSubmitBtn.disabled = false;
+  setupLoading.classList.remove('show');
+}
 
-// Login
-document.getElementById('form-login').onsubmit = async (e) => {
-  e.preventDefault();
-  const login = document.getElementById('login-user').value;
-  const pass = document.getElementById('login-pass').value;
-  const errEl = document.getElementById('login-error');
-  errEl.style.display = 'none';
+const loginUser = document.getElementById('login-user');
+const loginSubmitBtn = document.getElementById('loginSubmitBtn');
+const loginLoading = document.getElementById('loginLoading');
+
+async function submitLogin() {
+  hideAlert('login-alert');
+  const login = loginUser.value.trim();
+  const pass = loginPassField.getValue();
+
+  const okLogin = validateField(loginUser, document.getElementById('login-loginError'), login.length > 0);
+  const okPass = validateField(loginPassField.display, document.getElementById('login-passError'), pass.length > 0);
+  if (!okLogin || !okPass) return;
+
+  loginSubmitBtn.disabled = true;
+  loginLoading.classList.add('show');
   try {
     const r = await fetch(API+'/admin/login', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({login, password:pass}) });
-    const d = await r.json();
-    if (r.ok) { sessionStorage.setItem('admin_token', d.token); token = d.token; await init(); }
-    else { errEl.textContent = d.error || 'Invalid credentials'; errEl.style.display = ''; }
-  } catch { errEl.textContent = 'Network error'; errEl.style.display = ''; }
-};
+    const d = await parseRes(r);
+    if (r.ok && d.token) { sessionStorage.setItem('admin_token', d.token); token = d.token; await init(); return; }
+    showAlert('login-alert', '• ' + (d.error || 'Invalid credentials'));
+  } catch (e) {
+    showAlert('login-alert', '• Network error: ' + e.message);
+  }
+  loginSubmitBtn.disabled = false;
+  loginLoading.classList.remove('show');
+}
+
+setupSubmitBtn.addEventListener('click', submitSetup);
+loginSubmitBtn.addEventListener('click', submitLogin);
+
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Enter') {
+    const t = document.activeElement;
+    if (t && (t.id === 'setup-login' || setupPassField.display.id === t.id || setupConfirmField.display.id === t.id)) { e.preventDefault(); submitSetup(); }
+    else if (t && (t.id === 'login-user' || loginPassField.display.id === t.id)) { e.preventDefault(); submitLogin(); }
+  }
+});
+
+setupLogin.addEventListener('input', function() { this.classList.remove('error'); document.getElementById('setup-loginError').classList.remove('show'); hideAlert('setup-alert'); });
+loginUser.addEventListener('input', function() { this.classList.remove('error'); document.getElementById('login-loginError').classList.remove('show'); hideAlert('login-alert'); });
+
+setupLogin.focus();
 
 async function doLogout() {
   await fetch(API+'/admin/logout', { method: 'POST', headers: headers() });
@@ -287,7 +576,7 @@ async function changePassword() {
   const confirm = document.getElementById('new-pass-confirm').value;
   const msgEl = document.getElementById('pw-msg');
   if (pass !== confirm) { msgEl.innerHTML = '<span style="color:var(--red)">Passwords do not match</span>'; return; }
-  if (pass.length < 6) { msgEl.innerHTML = '<span style="color:var(--red)">Min 6 characters</span>'; return; }
+  if (pass.length < 3) { msgEl.innerHTML = '<span style="color:var(--red)">Min 3 characters</span>'; return; }
   try {
     const r = await fetch(API+'/admin/password', { method: 'POST', headers: headers(), body: JSON.stringify({password:pass}) });
     if (r.ok) { msgEl.innerHTML = '<span style="color:var(--green)">Changed</span>'; document.getElementById('new-pass').value=''; document.getElementById('new-pass-confirm').value=''; }
@@ -314,6 +603,14 @@ async function loadWalletInfo() {
       return;
     }
     let html = '<div class="info-box">';
+    html += `<div style="margin-bottom:0.5rem"><button class="btn" onclick="toggleSendForm()" style="float:left">Send</button></div>`;
+    html += `<div id="send-result" style="display:none;margin-bottom:0.75rem;padding:0.5rem;background:rgba(35,134,54,0.12);border:1px solid var(--green);border-radius:4px;word-break:break-all"></div>`;
+    html += `<div id="send-form" style="display:none;margin-bottom:0.75rem;padding:0.6rem;background:var(--bg);border:1px solid var(--border);border-radius:4px">`;
+    html += `<div style="margin-bottom:0.4rem"><input id="send-addr" type="text" placeholder="Destination address (L...)" style="width:100%;box-sizing:border-box;padding:0.35rem;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px"></div>`;
+    html += `<div style="margin-bottom:0.4rem"><input id="send-amount" type="number" step="0.00000001" min="0" placeholder="Amount (LBTC)" style="width:100%;box-sizing:border-box;padding:0.35rem;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px"></div>`;
+    html += `<div style="margin-bottom:0.4rem"><input id="send-fee" type="number" step="0.00000001" min="0" placeholder="Fee (LBTC, optional)" style="width:100%;box-sizing:border-box;padding:0.35rem;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px"></div>`;
+    html += `<div style="display:flex;gap:0.4rem"><button class="btn" onclick="doSend()">Confirm send</button><span id="send-msg" style="margin:auto 0;font-size:0.8rem"></span></div>`;
+    html += `</div>`;
     if (d.balance !== undefined) {
       html += `<div style="margin-bottom:0.5rem"><span class="lbl">Balance:</span> <span style="color:var(--green);font-size:1.1rem">${d.balance} LBTC</span></div>`;
     }
@@ -336,6 +633,37 @@ async function loadWalletInfo() {
     el.innerHTML = html;
   } catch {
     el.innerHTML = '<div style="color:var(--red)">Failed to load wallet info</div>';
+  }
+}
+
+function toggleSendForm() {
+  const f = document.getElementById('send-form');
+  if (f) f.style.display = f.style.display === 'none' ? 'block' : 'none';
+}
+
+async function doSend() {
+  const addr = document.getElementById('send-addr').value.trim();
+  const amount = parseFloat(document.getElementById('send-amount').value);
+  const feeVal = document.getElementById('send-fee').value;
+  const fee = feeVal === '' ? 0 : parseFloat(feeVal);
+  const msg = document.getElementById('send-msg');
+  if (!addr || !(amount > 0)) { msg.innerHTML = '<span style="color:var(--red)">Address and amount required</span>'; return; }
+  if (!confirm(`Send ${amount} LBTC to ${addr}?`)) return;
+  msg.innerHTML = '<span style="color:var(--yellow)">Sending...</span>';
+  try {
+    const r = await fetch(API+'/admin/wallet/send', { method: 'POST', headers: headers(), body: JSON.stringify({address: addr, amount: amount, fee: fee}) });
+    const d = await r.json();
+    if (!r.ok) { msg.innerHTML = `<span style="color:var(--red)">${escHtml(d.error || 'Failed')}</span>`; return; }
+    const res = document.getElementById('send-result');
+    res.style.display = 'block';
+    res.innerHTML = `<div style="color:var(--green);font-weight:600;margin-bottom:0.3rem">✓ Sent ${amount} LBTC</div>` +
+      `<div><span class="lbl">TX:</span> <span style="user-select:all">${escHtml(d.txid || '')}</span></div>` +
+      `<div style="margin-top:0.25rem"><a href="https://explorer.lbtc.forkex.life/tx/${encodeURIComponent(d.txid || '')}" target="_blank" rel="noopener" style="font-size:0.95rem">Open in explorer ↗</a></div>`;
+    msg.innerHTML = '';
+    toggleSendForm();
+    setTimeout(loadWalletInfo, 10000);
+  } catch {
+    msg.innerHTML = '<span style="color:var(--red)">Network error</span>';
   }
 }
 
