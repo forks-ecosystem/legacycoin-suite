@@ -271,6 +271,16 @@ func main() {
 				writeJSONError(w, http.StatusBadRequest, "amount must be > 0")
 				return
 			}
+			// Валидация получателя (L… и гибридные lhyb1…/lpq1…/lval1…) через ноду —
+			// раньше неверный адрес падал на уровне sendtoaddress с невнятным "bad destination address".
+			if vraw, verr := rpcCall("validateaddress", []interface{}{req.Address}); verr == nil {
+				var vi struct{ IsValid bool `json:"isvalid"` }
+				if json.Unmarshal(vraw, &vi) == nil && !vi.IsValid {
+					writeJSONError(w, http.StatusBadRequest,
+						"invalid destination address: "+req.Address+" (hybrid/legacy form, use e.g. lhyb1… or L…)")
+					return
+				}
+			}
 			params := []interface{}{req.Address, req.Amount}
 			if req.Fee > 0 {
 				params = append(params, req.Fee)
