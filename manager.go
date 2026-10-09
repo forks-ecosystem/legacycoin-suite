@@ -5,6 +5,9 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
 	"sync"
 )
 
@@ -15,7 +18,76 @@ type Config struct {
 	Worker  string `json:"worker"`
 }
 
-const configFile = "config.json"
+const (
+	configFile = "config/miner.json"
+	minWorkers = 1
+	maxWorkers = 1024
+)
+
+func (c Config) Validate() error {
+	if strings.TrimSpace(c.Pool) == "" {
+		return fmt.Errorf("pool address is required")
+	}
+	if strings.TrimSpace(c.Wallet) == "" {
+		return fmt.Errorf("wallet address is required")
+	}
+	if c.Workers < minWorkers || c.Workers > maxWorkers {
+		return fmt.Errorf("workers must be between %d and %d", minWorkers, maxWorkers)
+	}
+	return nil
+}
+
+func (c *Config) UnmarshalJSON(data []byte) error {
+	var raw struct {
+		Wallet  string      `json:"wallet"`
+		Pool    string      `json:"pool"`
+		Worker  string      `json:"worker"`
+		Workers interface{} `json:"workers"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	n, err := flexWorkers(raw.Workers)
+	if err != nil {
+		return fmt.Errorf("workers: %w", err)
+	}
+	c.Wallet = raw.Wallet
+	c.Pool = raw.Pool
+	c.Worker = raw.Worker
+	c.Workers = n
+	return nil
+}
+
+func flexWorkers(v interface{}) (int, error) {
+	switch t := v.(type) {
+	case nil:
+		return 0, fmt.Errorf("is required")
+	case float64:
+		n := int(t)
+		if float64(n) != t {
+			return 0, fmt.Errorf("must be a whole number")
+		}
+		return n, nil
+	case json.Number:
+		n, err := t.Int64()
+		if err != nil {
+			return 0, fmt.Errorf("must be a whole number")
+		}
+		return int(n), nil
+	case string:
+		s := strings.TrimSpace(t)
+		if s == "" {
+			return 0, fmt.Errorf("is required")
+		}
+		n, err := strconv.Atoi(s)
+		if err != nil {
+			return 0, fmt.Errorf("must be a number")
+		}
+		return n, nil
+	default:
+		return 0, fmt.Errorf("must be a number")
+	}
+}
 
 func defaultConfig() Config {
 	return Config{
@@ -31,7 +103,10 @@ func loadConfig() Config {
 
 	data, err := os.ReadFile(configFile)
 	if err == nil {
-		json.Unmarshal(data, &cfg)
+		if err := json.Unmarshal(data, &cfg); err != nil {
+			log.Printf("Config: ignoring %s: %v", configFile, err)
+			cfg = defaultConfig()
+		}
 	}
 
 	if v := os.Getenv("WALLET"); v != "" {
@@ -54,11 +129,34 @@ func loadConfig() Config {
 }
 
 func saveConfig(cfg Config) error {
+	if err := cfg.Validate(); err != nil {
+		return err
+	}
 	data, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(configFile, data, 0644)
+	dir := filepath.Dir(configFile)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return err
+	}
+	tmp, err := os.CreateTemp(dir, ".miner-*.json")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmp.Name())
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmp.Name(), configFile)
 }
 
 type Manager struct {
@@ -118,6 +216,10 @@ func (m *Manager) Restart() {
 }
 
 func (m *Manager) UpdateConfig(cfg Config) error {
+	if err := cfg.Validate(); err != nil {
+		return err
+	}
+
 	m.mu.Lock()
 	m.cfg = cfg
 	m.mu.Unlock()

@@ -12,3 +12,4 @@ crypto/yespower/libyespower.a
 crypto/yespower/*.o
 config.json
 config/admin.json
+config/miner.json

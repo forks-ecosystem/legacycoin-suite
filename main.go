@@ -192,16 +192,19 @@ func main() {
 			}
 			w.Header().Set("Content-Type", "application/json")
 			switch r.Method {
-			case "GET":
-				cfg := loadConfig()
-				json.NewEncoder(w).Encode(cfg)
-			case "POST":
+			case http.MethodGet:
+				json.NewEncoder(w).Encode(mgr.Config())
+			case http.MethodPost:
 				var newCfg Config
 				if err := json.NewDecoder(r.Body).Decode(&newCfg); err != nil {
 					writeJSONError(w, http.StatusBadRequest, err.Error())
 					return
 				}
-				if err := saveConfig(newCfg); err != nil {
+				if err := newCfg.Validate(); err != nil {
+					writeJSONError(w, http.StatusBadRequest, err.Error())
+					return
+				}
+				if err := mgr.UpdateConfig(newCfg); err != nil {
 					writeJSONError(w, http.StatusInternalServerError, err.Error())
 					return
 				}
@@ -263,7 +266,8 @@ func main() {
 				writeJSONError(w, http.StatusBadRequest, "bad request: "+err.Error())
 				return
 			}
-			if strings.TrimSpace(req.Address) == "" {
+			addr := strings.TrimSpace(req.Address)
+			if addr == "" {
 				writeJSONError(w, http.StatusBadRequest, "address is required")
 				return
 			}
@@ -271,17 +275,11 @@ func main() {
 				writeJSONError(w, http.StatusBadRequest, "amount must be > 0")
 				return
 			}
-			// Валидация получателя (L… и гибридные lhyb1…/lpq1…/lval1…) через ноду —
-			// раньше неверный адрес падал на уровне sendtoaddress с невнятным "bad destination address".
-			if vraw, verr := rpcCall("validateaddress", []interface{}{req.Address}); verr == nil {
-				var vi struct{ IsValid bool `json:"isvalid"` }
-				if json.Unmarshal(vraw, &vi) == nil && !vi.IsValid {
-					writeJSONError(w, http.StatusBadRequest,
-						"invalid destination address: "+req.Address+" (hybrid/legacy form, use e.g. lhyb1… or L…)")
-					return
-				}
+			if err := validateDestinationAddress(addr); err != nil {
+				writeJSONError(w, http.StatusBadRequest, err.Error())
+				return
 			}
-			params := []interface{}{req.Address, req.Amount}
+			params := []interface{}{addr, req.Amount}
 			if req.Fee > 0 {
 				params = append(params, req.Fee)
 			}
@@ -339,6 +337,10 @@ func main() {
 				http.Error(w, err.Error(), http.StatusBadRequest)
 				return
 			}
+			if err := cfg.Validate(); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
 			if err := mgr.UpdateConfig(cfg); err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
@@ -387,6 +389,44 @@ func main() {
 	if err := http.ListenAndServe(*webAddr, mux); err != nil {
 		log.Fatalf("Web server error: %v", err)
 	}
+}
+
+// LBTC destinations come in two forms: classic base58check (L…) and the hybrid
+// form (lhyb1…/lpq1…/lval1…, classic prefix + bech32-style payload) used for the
+// browser-generated wallet addresses. The node stays the authority on validity;
+// the local prefix check only keeps a hybrid/classic destination allowed when
+// the node RPC is briefly unavailable, and replaces sendtoaddress's opaque
+// "bad destination address" with a clear message.
+var hybridPrefixes = []string{"lhyb1", "lpq1", "lval1"}
+
+func isHybridAddress(addr string) bool {
+	for _, p := range hybridPrefixes {
+		if strings.HasPrefix(addr, p) {
+			return true
+		}
+	}
+	return false
+}
+
+func isClassicAddress(addr string) bool {
+	return strings.HasPrefix(addr, "L") && len(addr) >= 26 && len(addr) <= 36
+}
+
+func validateDestinationAddress(addr string) error {
+	vraw, verr := rpcCall("validateaddress", []interface{}{addr})
+	if verr == nil {
+		var vi struct {
+			IsValid bool `json:"isvalid"`
+		}
+		if json.Unmarshal(vraw, &vi) == nil && !vi.IsValid {
+			return fmt.Errorf("invalid destination address: %s (use L… or hybrid lhyb1…)", addr)
+		}
+		return nil
+	}
+	if isHybridAddress(addr) || isClassicAddress(addr) {
+		return nil
+	}
+	return fmt.Errorf("cannot validate destination address %s: %v", addr, verr)
 }
 
 func (m *Miner) Stats() map[string]interface{} {
