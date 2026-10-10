@@ -621,6 +621,8 @@ async function loadWalletInfo() {
       return;
     }
     let html = '<div class="info-box">';
+    html += `<div style="font-weight:600;margin-bottom:0.5rem">default wallet</div>`;
+    html += `<div style="margin-bottom:0.75rem"><span class="lbl">Balance:</span> <span style="color:var(--green);font-size:1.1rem">${d.balance || 0} LBTC</span></div>`;
     html += `<div style="font-weight:600;margin-bottom:0.5rem">default address</div>`;
     if (d.walletinfo) {
       html += `<div style="margin-bottom:0.5rem"><span class="lbl">Balance:</span> <span style="color:var(--green);font-size:1.1rem">${d.walletinfo.balance || 0} LBTC</span></div>`;
