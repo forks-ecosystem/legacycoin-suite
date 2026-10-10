@@ -621,7 +621,16 @@ async function loadWalletInfo() {
       return;
     }
     let html = '<div class="info-box">';
-    html += `<div style="margin-bottom:0.5rem"><button class="btn" onclick="toggleSendForm()" style="float:left">Send</button></div>`;
+    html += `<div style="font-weight:600;margin-bottom:0.5rem">default address</div>`;
+    if (d.walletinfo) {
+      html += `<div style="margin-bottom:0.5rem"><span class="lbl">Balance:</span> <span style="color:var(--green);font-size:1.1rem">${d.walletinfo.balance || 0} LBTC</span></div>`;
+      html += `<div><span class="lbl">Address:</span> <span style="user-select:all">${d.walletinfo.address || '—'}</span></div>`;
+      html += `<div><span class="lbl">Label:</span> ${d.walletinfo.label || '—'}</div>`;
+      html += `<div><span class="lbl">Key Pool:</span> ${d.walletinfo.keypoolsize || 0} keys</div>`;
+      html += `<div><span class="lbl">TX Count:</span> ${d.walletinfo.txcount || 0}</div>`;
+    }
+    html += `<div style="margin-top:0.75rem;border-top:1px solid var(--border);padding-top:0.5rem">`;
+    html += `<div style="margin-bottom:0.5rem"><button class="btn" onclick="toggleSendForm()">Send</button></div>`;
     html += `<div id="send-result" style="display:none;margin-bottom:0.75rem;padding:0.5rem;background:rgba(35,134,54,0.12);border:1px solid var(--green);border-radius:4px;word-break:break-all"></div>`;
     html += `<div id="send-form" style="display:none;margin-bottom:0.75rem;padding:0.6rem;background:var(--bg);border-radius:4px">`;
     html += `<div style="margin-bottom:0.4rem"><input id="send-addr" type="text" placeholder="Destination address (L… or lhyb1…)" style="width:100%;box-sizing:border-box;padding:0.35rem;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;margin-top:10px"><div style="font-size:0.68rem;color:var(--muted);margin-top:0.25rem">Legacy L… and hybrid lhyb1…/lpq1…/lval1… addresses are accepted</div></div>`;
@@ -629,24 +638,15 @@ async function loadWalletInfo() {
     html += `<div style="margin-bottom:0.4rem"><input id="send-fee" type="number" step="0.00000001" min="0" placeholder="Fee (LBTC, optional)" style="width:100%;box-sizing:border-box;padding:0.35rem;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px"></div>`;
     html += `<div style="display:flex;gap:0.4rem"><button class="btn" onclick="doSend()">Confirm send</button><span id="send-msg" style="margin:auto 0;font-size:0.8rem"></span></div>`;
     html += `</div>`;
-    if (d.balance !== undefined) {
-      html += `<div style="margin-bottom:0.5rem"><span class="lbl">Balance:</span> <span style="color:var(--green);font-size:1.1rem">${d.balance} LBTC</span></div>`;
+    if (d.workerinfo) {
+      html += `<div><span class="lbl">address:</span> <span style="user-select:all">${escHtml(d.workerinfo.address || '—')}</span></div>`;
+      const wbal = (Number(d.workerinfo.confirmed) || 0) + (Number(d.workerinfo.unconfirmed) || 0) + (Number(d.workerinfo.immature) || 0);
+      html += `<div style="margin-top:0.25rem"><span class="lbl">balance:</span> <span style="color:var(--green);font-size:1.1rem">${wbal} LBTC</span></div>`;
+      html += `<div style="padding-left:0.75rem"><span class="lbl">Confirmed:</span> ${d.workerinfo.confirmed || 0} LBTC</div>`;
+      html += `<div style="padding-left:0.75rem"><span class="lbl">Unconfirmed:</span> ${d.workerinfo.unconfirmed || 0} LBTC</div>`;
+      html += `<div style="padding-left:0.75rem"><span class="lbl">Immature:</span> ${d.workerinfo.immature || 0} LBTC</div>`;
     }
-    if (d.walletinfo) {
-      html += `<div style="margin-top:0.75rem;border-top:1px solid var(--border);padding-top:0.5rem">`;
-      html += `<div><span class="lbl">Address:</span> <span style="user-select:all">${d.walletinfo.address || '—'}</span></div>`;
-      html += `<div><span class="lbl">Label:</span> ${d.walletinfo.label || '—'}</div>`;
-      html += `<div><span class="lbl">Key Pool:</span> ${d.walletinfo.keypoolsize || 0} keys</div>`;
-      html += `<div><span class="lbl">TX Count:</span> ${d.walletinfo.txcount || 0}</div>`;
-      html += `</div>`;
-    }
-    if (d.summary) {
-      html += `<div style="margin-top:0.75rem;border-top:1px solid var(--border);padding-top:0.5rem">`;
-      html += `<div><span class="lbl">Confirmed:</span> ${d.summary.balance || 0} LBTC</div>`;
-      html += `<div><span class="lbl">Unconfirmed:</span> ${d.summary.unconfirmed_balance || 0} LBTC</div>`;
-      html += `<div><span class="lbl">Immature:</span> ${d.summary.immature_balance || 0} LBTC</div>`;
-      html += `</div>`;
-    }
+    html += `</div>`;
     html += '</div>';
     el.innerHTML = html;
   } catch {

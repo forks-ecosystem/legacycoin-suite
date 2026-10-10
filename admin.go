@@ -273,19 +273,56 @@ func GetWalletInfo() map[string]interface{} {
 				"immature_balance":    float64(s.Immature) / 1e8,
 			}
 
+			defaultAddress := dominantWalletAddress(s.SpendableOutputs, s.ImmatureOutputs, s.AddressByHash)
 			walletinfo := map[string]interface{}{
-				"address": dominantWalletAddress(s.SpendableOutputs, s.ImmatureOutputs, s.AddressByHash),
+				"address": defaultAddress,
 				"label":   "mining",
 			}
 			if s.Wallet != nil {
 				walletinfo["keypoolsize"] = s.Wallet.ClassicKeys
 			}
 			walletinfo["txcount"] = countWalletTxids(s.SpendableOutputs, s.ImmatureOutputs)
+			if defaultAddress != "" {
+				if r, err := rpcCall("getaddressbalance", []interface{}{defaultAddress}); err == nil {
+					var ab struct {
+						Balance int64 `json:"balance_base_units"`
+					}
+					if json.Unmarshal(r, &ab) == nil {
+						walletinfo["balance"] = float64(ab.Balance) / 1e8
+					}
+				}
+			}
 			result["walletinfo"] = walletinfo
 		}
 	}
 
+	if worker := workerWalletInfo(); worker != nil {
+		result["workerinfo"] = worker
+	}
+
 	return result
+}
+
+func workerWalletInfo() map[string]interface{} {
+	addr := strings.TrimSpace(loadConfig().Wallet)
+	if addr == "" {
+		return nil
+	}
+	info := map[string]interface{}{
+		"address":     addr,
+		"confirmed":   0.0,
+		"unconfirmed": 0.0,
+		"immature":    0.0,
+	}
+	if r, err := rpcCall("getaddressbalance", []interface{}{addr}); err == nil {
+		var ab struct {
+			Balance int64 `json:"balance_base_units"`
+		}
+		if json.Unmarshal(r, &ab) == nil {
+			info["confirmed"] = float64(ab.Balance) / 1e8
+		}
+	}
+	return info
 }
 
 func dominantWalletAddress(spendable, immature []json.RawMessage, byHash map[string]string) string {
