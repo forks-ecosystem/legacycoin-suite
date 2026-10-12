@@ -83,6 +83,7 @@ type Miner struct {
 
 type MiningStats struct {
 	AcceptedShares int64
+	BlocksFound    int64
 	TotalHashes    uint64
 	HashRate       int64
 	StartTime      time.Time
@@ -445,6 +446,7 @@ func (m *Miner) Stats() map[string]interface{} {
 		"workerName":       m.workerName,
 		"workers":          m.workers,
 		"acceptedShares":   atomic.LoadInt64(&m.stats.AcceptedShares),
+		"blocksFound":      atomic.LoadInt64(&m.stats.BlocksFound),
 		"totalHashes":      atomic.LoadUint64(&m.stats.TotalHashes),
 		"hashRate":         float64(atomic.LoadInt64(&m.stats.HashRate)),
 		"uptimeSeconds":    time.Since(m.stats.StartTime).Seconds(),
@@ -618,6 +620,7 @@ func (m *Miner) mineJob(workerID int, job *MiningJob) {
 			m.submitShare(job, extranonce2, ntime, nonce)
 
 			if HashMeetsTarget(hash[:], netTarget) {
+				atomic.AddInt64(&m.stats.BlocksFound, 1)
 				h := atomic.LoadInt64(&m.stats.Height)
 
 				m.lastBlockMu.Lock()

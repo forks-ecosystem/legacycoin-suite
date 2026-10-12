@@ -60,8 +60,12 @@
           <div class="text-xl font-bold text-green-400" id="hashrate">-</div>
         </div>
         <div class="bg-gray-900 border border-gray-800 rounded p-4">
-          <div class="text-xs text-gray-500 uppercase">Accepted</div>
+          <div class="text-xs text-gray-500 uppercase">Accepted Shares</div>
           <div class="text-xl font-bold text-blue-400" id="accepted">-</div>
+        </div>
+        <div class="bg-gray-900 border border-gray-800 rounded p-4">
+          <div class="text-xs text-gray-500 uppercase">Blocks</div>
+          <div class="text-xl font-bold text-orange-400" id="blocks">-</div>
         </div>
         <div class="bg-gray-900 border border-gray-800 rounded p-4">
           <div class="text-xs text-gray-500 uppercase">Total Hashes</div>
@@ -386,6 +390,7 @@
 
         document.getElementById('hashrate').textContent = formatHashrate(data.hashRate);
         document.getElementById('accepted').textContent = (data.acceptedShares || 0).toLocaleString();
+        document.getElementById('blocks').textContent = (data.blocksFound || 0).toLocaleString();
         document.getElementById('totalHashes').textContent = (data.totalHashes || 0).toLocaleString();
         document.getElementById('uptime').textContent = formatUptime(data.uptimeSeconds || 0);
 
