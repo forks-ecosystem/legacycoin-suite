@@ -1,7 +1,7 @@
 eval "$(ssh-agent -s)"
 ssh-add ~/.ssh/forks-ecosystem
 
-cd /home/coin/legacybtc-pool
+cd /app/legacycoin-suite
 
 git config user.email "myshopper.club@gmail.com"
 git config user.name "forks-ecosystem"
