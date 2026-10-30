@@ -1,7 +1,7 @@
 #!/bin/bash
 # Quick wallet operations via legacycoin-cli
 
-CLI="/app/LegacyCore/legacycoin-cli"
+CLI="/app/legacycore/legacycoin-cli"
 COOKIE="/home/coin/.legacycoin/.cookie"
 
 # Read credentials from cookie file

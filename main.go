@@ -21,7 +21,10 @@ import (
 	"sync/atomic"
 	"time"
 
+	"database/sql"
 	"legacycoin-miner/crypto"
+
+	_ "modernc.org/sqlite"
 )
 
 const chainStateFile = "tmp/chainstate.json"
@@ -31,6 +34,8 @@ var dashboardHTML string
 
 //go:embed static/admin.html
 var adminHTML string
+
+var db *sql.DB
 
 type StratumMessage struct {
 	ID     any           `json:"id"`
@@ -94,6 +99,8 @@ type MiningStats struct {
 func main() {
 	webAddr := flag.String("web", ":3002", "Web server address")
 	flag.Parse()
+	initDB()
+	defer db.Close()
 
 	cfg := loadConfig()
 
@@ -112,9 +119,15 @@ func main() {
 	// --- Admin: SPA catch-all (serves HTML for any /admin/* GET, API routes below override) ---
 	adminServeHTML := func(w http.ResponseWriter) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.Write([]byte(adminHTML))
-	}
 
+		html, err := loadBlockContent("suite-admin")
+		if err != nil {
+			log.Printf("block suite-admin from DB: %v — fallback to embed", err)
+			w.Write([]byte(adminHTML))
+			return
+		}
+		w.Write([]byte(html))
+	}
 	writeJSONError := func(w http.ResponseWriter, status int, msg string) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(status)
@@ -246,6 +259,34 @@ func main() {
 			}
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(GetWalletInfo())
+
+		case "wallet/fee":
+			token := r.Header.Get("Authorization")
+			token = strings.TrimPrefix(token, "Bearer ")
+			if !adminAuth.VerifySession(token) {
+				writeJSONError(w, http.StatusUnauthorized, "unauthorized")
+				return
+			}
+			if r.Method != http.MethodPost {
+				writeJSONError(w, http.StatusMethodNotAllowed, "POST required")
+				return
+			}
+			var req struct {
+				Address string  `json:"address"`
+				Amount  float64 `json:"amount"`
+				From    string  `json:"from"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				writeJSONError(w, http.StatusBadRequest, "bad request: "+err.Error())
+				return
+			}
+			est, err := estimateSendFee(req.From, req.Amount)
+			if err != nil {
+				writeJSONError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(est)
 		case "wallet/send":
 			token := r.Header.Get("Authorization")
 			token = strings.TrimPrefix(token, "Bearer ")
@@ -260,8 +301,8 @@ func main() {
 			var req struct {
 				Address string  `json:"address"`
 				Amount  float64 `json:"amount"`
-				FeeSet  bool    `json:"-"`
 				Fee     float64 `json:"fee"`
+				From    string  `json:"from"`
 			}
 			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 				writeJSONError(w, http.StatusBadRequest, "bad request: "+err.Error())
@@ -280,11 +321,50 @@ func main() {
 				writeJSONError(w, http.StatusBadRequest, err.Error())
 				return
 			}
-			params := []interface{}{addr, req.Amount}
-			if req.Fee > 0 {
-				params = append(params, req.Fee)
+
+			from := strings.TrimSpace(req.From)
+			var res json.RawMessage
+			var err error
+
+			// The browser may send before its fee estimate arrives, or the user
+			// may leave the fee field empty. Fill it here so a large send never
+			// falls back to the node's 1000-sat default, which is below the
+			// minimum relay fee once the transaction needs many inputs.
+			est, estErr := estimateSendFee(from, req.Amount)
+			if estErr == nil {
+				switch {
+				case req.Fee <= 0:
+					req.Fee = est.Fee
+				case req.Fee < est.MinFee:
+					writeJSONError(w, http.StatusBadRequest, fmt.Sprintf(
+						"fee %.8f LBTC is below the minimum relay fee %.8f LBTC for this transaction (~%d bytes, %d inputs)",
+						req.Fee, est.MinFee, est.Size, est.Inputs))
+					return
+				}
+			} else if req.Fee <= 0 {
+				writeJSONError(w, http.StatusBadRequest, "could not calculate fee: "+estErr.Error())
+				return
 			}
-			res, err := rpcCall("sendtoaddress", params)
+
+			// Address-specific sends use sendfromaddress so the node can pick
+			// the wallet that actually owns the source address. The default
+			// sendtoaddress path only sees the default wallet, which makes a
+			// funded address in another wallet (for example the miner wallet)
+			// look empty.
+			if from != "" {
+				params := []interface{}{from, addr, req.Amount}
+				if req.Fee > 0 {
+					params = append(params, req.Fee)
+				}
+				res, err = rpcCallWallet("sendfromaddress", params, walletOwningAddress(from))
+			} else {
+				params := []interface{}{addr, req.Amount}
+				if req.Fee > 0 {
+					params = append(params, req.Fee)
+				}
+				res, err = rpcCall("sendtoaddress", params)
+			}
+
 			if err != nil {
 				writeJSONError(w, http.StatusBadRequest, err.Error())
 				return
@@ -376,14 +456,27 @@ func main() {
 	})
 
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		// Если админ ещё не настроен — отдаём страницу setup/login из базы
 		if !adminAuth.isConfigured() {
-			http.Redirect(w, r, "/admin/", http.StatusFound)
+			html, err := loadBlockContent("suite-admin")
+			if err != nil {
+				log.Printf("block admin from DB: %v — fallback to embed", err)
+				w.Write([]byte(adminHTML))
+				return
+			}
+			w.Write([]byte(html))
 			return
 		}
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.Write([]byte(dashboardHTML))
+		// Обычный дашборд
+		html, err := loadBlockContent("suite-dashboard")
+		if err != nil {
+			log.Printf("block suite-dashboard from DB: %v — fallback to embed", err)
+			w.Write([]byte(dashboardHTML))
+			return
+		}
+		w.Write([]byte(html))
 	})
-
 	log.Printf("Web UI: http://0.0.0.0%s", *webAddr)
 	log.Printf("Config: pool=%s wallet=%s workers=%d", cfg.Pool, cfg.Wallet, cfg.Workers)
 
@@ -441,19 +534,19 @@ func (m *Miner) Stats() map[string]interface{} {
 	m.lastBlockMu.Unlock()
 
 	return map[string]interface{}{
-		"poolAddress":      m.poolAddress,
-		"walletAddress":    m.walletAddress,
-		"workerName":       m.workerName,
-		"workers":          m.workers,
-		"acceptedShares":   atomic.LoadInt64(&m.stats.AcceptedShares),
-		"blocksFound":      atomic.LoadInt64(&m.stats.BlocksFound),
-		"totalHashes":      atomic.LoadUint64(&m.stats.TotalHashes),
-		"hashRate":         float64(atomic.LoadInt64(&m.stats.HashRate)),
-		"uptimeSeconds":    time.Since(m.stats.StartTime).Seconds(),
-		"height":           atomic.LoadInt64(&m.stats.Height),
-		"lastBlockHeight":  lbh,
-		"lastBlockHash":    lbHash,
-		"lastBlockTime":    lbt,
+		"poolAddress":     m.poolAddress,
+		"walletAddress":   m.walletAddress,
+		"workerName":      m.workerName,
+		"workers":         m.workers,
+		"acceptedShares":  atomic.LoadInt64(&m.stats.AcceptedShares),
+		"blocksFound":     atomic.LoadInt64(&m.stats.BlocksFound),
+		"totalHashes":     atomic.LoadUint64(&m.stats.TotalHashes),
+		"hashRate":        float64(atomic.LoadInt64(&m.stats.HashRate)),
+		"uptimeSeconds":   time.Since(m.stats.StartTime).Seconds(),
+		"height":          atomic.LoadInt64(&m.stats.Height),
+		"lastBlockHeight": lbh,
+		"lastBlockHash":   lbHash,
+		"lastBlockTime":   lbt,
 	}
 }
 
@@ -875,9 +968,9 @@ func (pn *poolNode) status() map[string]interface{} {
 	pn.mu.RLock()
 	defer pn.mu.RUnlock()
 	return map[string]interface{}{
-		"port":       pn.port,
-		"peerCount":  len(pn.peerMap),
-		"running":    true,
+		"port":      pn.port,
+		"peerCount": len(pn.peerMap),
+		"running":   true,
 	}
 }
 
@@ -950,3 +1043,28 @@ func (m *Miner) reportStats() {
 	}
 }
 
+func initDB() {
+	var err error
+	db, err = sql.Open("sqlite", "db/ixbase.db")
+	if err != nil {
+		log.Fatal("SQLite open error:", err)
+	}
+}
+
+// loadBlockContent загружает содержимое блока по имени (p4).
+// По умолчанию берём p5 (как в твоём PHP v.php).
+func loadBlockContent(name string) (string, error) {
+	var content string
+	err := db.QueryRow(`
+                SELECT COALESCE(p5, '')
+                FROM blkinf00
+                WHERE p4 = ? 
+        `, name).Scan(&content)
+	if err != nil {
+		return "", err
+	}
+	if content == "" {
+		return "", fmt.Errorf("block %q is empty", name)
+	}
+	return content, nil
+}

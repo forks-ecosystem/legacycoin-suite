@@ -36,7 +36,7 @@ These paths are gitignored and must be transferred (or recreated):
 
 | Project | Gitignored files |
 |---------|------------------|
-| legacycoin-suite | `.env`, `config/admin.json`, `config/miner.json` |
+| legacycoin-suite | `config/admin.json`, `config/miner.json`, `db/ixbase.db` |
 | forkex | `.env`, `server/tools/hollaex-kit.env.local`, `templates/local/*.env.local`, `plugins/config/`, `plugins/json/`, `*.pem`, `*.key`, `backups/` |
 | legacybtc-pool | `config/admin.json`, `config/pool.env`, `artifacts/api-server/.env`, `data/` |
 | legacycoin-explorer | `.env`, `data/` |

@@ -3,7 +3,6 @@
 /tmp/
 /logs/
 *.log
-/.env
 *.o
 *.a
 yespower/libyespower.a
@@ -13,3 +12,8 @@ crypto/yespower/*.o
 config.json
 config/admin.json
 config/miner.json
+
+# Local SQLite content DB (contains users/passwords, never commit)
+/db/ixbase.db
+/db/ixbase.db-shm
+/db/ixbase.db-wal

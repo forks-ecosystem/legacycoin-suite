@@ -1,10 +1,5 @@
 #!/bin/sh
 
-# Load .env
-if [ -f .env ]; then
-    export $(grep -v '^#' .env | xargs)
-fi
-
 docker compose up -d || exit 1
 
 # Wait for container
@@ -33,5 +28,5 @@ echo " LegacyCoin Suite"
 echo "────────────────────────────────────────"
 echo " $STATUS_ICON Container: $STATUS_TEXT"
 echo " $STATUS_ICON HTTP port: 3002"
-echo " $STATUS_ICON Web: ${SUITE_URL:-http://localhost:3002}"
+echo " $STATUS_ICON Web: http://localhost:3002"
 echo "════════════════════════════════════════"

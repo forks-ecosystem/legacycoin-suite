@@ -635,7 +635,9 @@ async function loadWalletInfo() {
     html += `<div style="margin-bottom:0.5rem"><button class="btn" onclick="toggleSendForm()">Send</button></div>`;
     html += `<div id="send-result" style="display:none;margin-bottom:0.75rem;padding:0.5rem;background:rgba(35,134,54,0.12);border:1px solid var(--green);border-radius:4px;word-break:break-all"></div>`;
     html += `<div id="send-form" style="display:none;margin-bottom:0.75rem;padding:0.6rem;background:var(--bg);border-radius:4px">`;
-    html += `<div style="margin-bottom:0.4rem"><input id="send-addr" type="text" placeholder="Destination address (L… or lhyb1…)" style="width:100%;box-sizing:border-box;padding:0.35rem;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;margin-top:10px"><div style="font-size:0.68rem;color:var(--muted);margin-top:0.25rem">Legacy L… and hybrid lhyb1…/lpq1…/lval1… addresses are accepted</div></div>`;
+    const defFrom = (d.workerinfo && d.workerinfo.address) ? d.workerinfo.address : ((d.walletinfo && d.walletinfo.address) ? d.walletinfo.address : '');
+    html += `<div style="margin-bottom:0.4rem"><input id="send-from" type="text" value="${escHtml(defFrom)}" placeholder="Send from address (optional) — defaults to wallet" style="width:100%;box-sizing:border-box;padding:0.35rem;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;margin-top:10px"></div>`;
+    html += `<div style="margin-bottom:0.4rem"><input id="send-addr" type="text" placeholder="Destination address (L… or lhyb1…)" style="width:100%;box-sizing:border-box;padding:0.35rem;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px"><div style="font-size:0.68rem;color:var(--muted);margin-top:0.25rem">Legacy L… and hybrid lhyb1…/lpq1…/lval1… addresses are accepted</div></div>`;
     html += `<div style="margin-bottom:0.4rem"><input id="send-amount" type="number" step="0.00000001" min="0" placeholder="Amount (LBTC)" style="width:100%;box-sizing:border-box;padding:0.35rem;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px"></div>`;
     html += `<div style="margin-bottom:0.4rem"><input id="send-fee" type="number" step="0.00000001" min="0" placeholder="Fee (LBTC, optional)" style="width:100%;box-sizing:border-box;padding:0.35rem;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px"></div>`;
     html += `<div style="display:flex;gap:0.4rem"><button class="btn" onclick="doSend()">Confirm send</button><span id="send-msg" style="margin:auto 0;font-size:0.8rem"></span></div>`;
@@ -663,15 +665,16 @@ function toggleSendForm() {
 
 async function doSend() {
   const addr = document.getElementById('send-addr').value.trim();
+  const from = document.getElementById('send-from') ? document.getElementById('send-from').value.trim() : '';
   const amount = parseFloat(document.getElementById('send-amount').value);
   const feeVal = document.getElementById('send-fee').value;
   const fee = feeVal === '' ? 0 : parseFloat(feeVal);
   const msg = document.getElementById('send-msg');
   if (!addr || !(amount > 0)) { msg.innerHTML = '<span style="color:var(--red)">Address and amount required</span>'; return; }
-  if (!confirm(`Send ${amount} LBTC to ${addr}?`)) return;
+  if (!confirm(from ? `Send ${amount} LBTC from ${from} to ${addr}?` : `Send ${amount} LBTC to ${addr}?`)) return;
   msg.innerHTML = '<span style="color:var(--yellow)">Sending...</span>';
   try {
-    const r = await fetch(API+'/admin/wallet/send', { method: 'POST', headers: headers(), body: JSON.stringify({address: addr, amount: amount, fee: fee}) });
+    const r = await fetch(API+'/admin/wallet/send', { method: 'POST', headers: headers(), body: JSON.stringify({address: addr, amount: amount, fee: fee, from: from}) });
     const d = await r.json();
     if (!r.ok) { msg.innerHTML = `<span style="color:var(--red)">${escHtml(d.error || 'Failed')}</span>`; return; }
     const res = document.getElementById('send-result');

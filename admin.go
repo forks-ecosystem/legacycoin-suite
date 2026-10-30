@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math"
 	"net/http"
 	"os"
 	"sort"
@@ -20,9 +21,9 @@ import (
 const adminConfigFile = "config/admin.json"
 
 type AdminConfig struct {
-	Login         string `json:"login"`
-	PasswordHash  string `json:"passwordHash"`
-	SessionToken  string `json:"sessionToken"`
+	Login        string `json:"login"`
+	PasswordHash string `json:"passwordHash"`
+	SessionToken string `json:"sessionToken"`
 }
 
 type AdminAuth struct {
@@ -178,6 +179,13 @@ func rpcEnv(key, def string) string {
 }
 
 func rpcCall(method string, params []interface{}) (json.RawMessage, error) {
+	return rpcCallWallet(method, params, "")
+}
+
+// rpcCallWallet runs an RPC against one named node wallet. Address-based send
+// RPCs route to the owning wallet on the node, but balance/summary reads still
+// need the header to inspect a non-default wallet such as "mainer".
+func rpcCallWallet(method string, params []interface{}, wallet string) (json.RawMessage, error) {
 	body, err := json.Marshal(map[string]interface{}{
 		"jsonrpc": "1.0", "id": 1, "method": method, "params": params,
 	})
@@ -189,6 +197,9 @@ func rpcCall(method string, params []interface{}) (json.RawMessage, error) {
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "text/plain")
+	if wallet != "" {
+		req.Header.Set("X-LegacyCoin-Wallet", wallet)
+	}
 	req.SetBasicAuth(rpcEnv("LEGACYCOIN_RPC_USER", "coin"), rpcEnv("LEGACYCOIN_RPC_PASS", "coin"))
 
 	client := &http.Client{Timeout: 10 * time.Second}
@@ -257,10 +268,10 @@ func GetWalletInfo() map[string]interface{} {
 
 	if r, err := rpcFetch(); err == nil {
 		var s struct {
-			Spendable        int64             `json:"spendable"`
-			Immature         int64             `json:"immature"`
-			AddressByHash    map[string]string `json:"address_by_pubkey_hash"`
-			Wallet           *struct {
+			Spendable     int64             `json:"spendable"`
+			Immature      int64             `json:"immature"`
+			AddressByHash map[string]string `json:"address_by_pubkey_hash"`
+			Wallet        *struct {
 				ClassicKeys int `json:"classic_keys"`
 			} `json:"wallet"`
 			SpendableOutputs []json.RawMessage `json:"spendable_outputs"`
@@ -296,11 +307,247 @@ func GetWalletInfo() map[string]interface{} {
 		}
 	}
 
+	if wallets := listWalletBalances(); len(wallets) > 0 {
+		result["wallets"] = wallets
+	}
+
 	if worker := workerWalletInfo(); worker != nil {
 		result["workerinfo"] = worker
 	}
 
 	return result
+}
+
+// walletOwningAddress returns the node wallet name that tracks addr. Sending
+// from an address in a named wallet needs both the owning wallet name (for the
+// request header) and the node's sendfromaddress routing, so the suite works
+// against older nodes that still default every send to the default wallet.
+func walletOwningAddress(addr string) string {
+	addr = strings.TrimSpace(addr)
+	if addr == "" {
+		return ""
+	}
+	raw, err := rpcCall("listwallets", []interface{}{})
+	if err != nil {
+		return ""
+	}
+	var names []string
+	if err := json.Unmarshal(raw, &names); err != nil {
+		return ""
+	}
+	for _, name := range names {
+		r, err := rpcCallWallet("getwalletsummary", []interface{}{}, name)
+		if err != nil {
+			continue
+		}
+		var s struct {
+			PubKeyHashByAddress map[string]string `json:"pubkey_hash_by_address"`
+		}
+		if err := json.Unmarshal(r, &s); err != nil {
+			continue
+		}
+		if _, ok := s.PubKeyHashByAddress[addr]; ok {
+			return name
+		}
+	}
+	return ""
+}
+
+type sendFeeEstimate struct {
+	Fee          float64 `json:"fee"`
+	FeeBaseUnits int64   `json:"fee_base_units"`
+	MinFee       float64 `json:"min_fee"`
+	MinFeeUnits  int64   `json:"min_fee_base_units"`
+	FeeRate      float64 `json:"feerate"`
+	Inputs       int     `json:"inputs"`
+	Size         int64   `json:"size"`
+	Spendable    float64 `json:"spendable"`
+	Required     float64 `json:"required"`
+}
+
+type walletUTXO struct {
+	AmountBaseUnits int64  `json:"amount_base_units"`
+	Spendable       bool   `json:"spendable"`
+	ScriptPubKey    string `json:"scriptPubKey"`
+}
+
+// estimateInputSize mirrors the node's transaction sizing for the two address
+// families it can spend. Hybrid inputs carry an ML-DSA signature and public
+// key, so using the classic P2PKH size for them would underpay the relay fee by
+// a large margin.
+func estimateInputSize(scriptHex string) int64 {
+	if strings.HasPrefix(strings.ToLower(strings.TrimSpace(scriptHex)), "00a914") {
+		return 5418
+	}
+	// 149 covers the longest DER signature (72-byte sig + sighash byte, plus
+	// its push opcode) rather than the usual 148-byte case.
+	return 149
+}
+
+func nodeFeeRatePerKB() int64 {
+	raw, err := rpcCall("estimatefee", []interface{}{6})
+	if err != nil {
+		return 0
+	}
+	var est struct {
+		FeeRate float64 `json:"feerate"`
+	}
+	if err := json.Unmarshal(raw, &est); err != nil || est.FeeRate <= 0 {
+		return 0
+	}
+	return int64(math.Ceil(est.FeeRate * 1e8))
+}
+
+func nodeMinRelayFeePerKB() int64 {
+	raw, err := rpcCall("getmempoolinfo", []interface{}{})
+	if err == nil {
+		var info struct {
+			MinRelayFeeKB int64 `json:"minrelayfeekb"`
+		}
+		if json.Unmarshal(raw, &info) == nil && info.MinRelayFeeKB > 0 {
+			return info.MinRelayFeeKB
+		}
+	}
+	return 1000
+}
+
+// estimateSendFee recommends a fee for a send and mirrors the node's coin
+// selection order, so the estimated input count (and therefore transaction
+// size) matches what sendfromaddress will really sign. Without this the admin
+// form kept submitting the old 1000-sat default, which is below the minimum
+// relay fee as soon as a send needs more than a handful of inputs.
+func estimateSendFee(from string, amount float64) (*sendFeeEstimate, error) {
+	from = strings.TrimSpace(from)
+	if amount <= 0 {
+		return nil, fmt.Errorf("amount must be greater than zero")
+	}
+	wallet := ""
+	params := []interface{}{0, 9999999}
+	if from != "" {
+		wallet = walletOwningAddress(from)
+		if wallet == "" {
+			return nil, fmt.Errorf("source address is not owned by any loaded wallet")
+		}
+		params = append(params, []string{from})
+	}
+	raw, err := rpcCallWallet("listunspent", params, wallet)
+	if err != nil {
+		return nil, err
+	}
+	var utxos []walletUTXO
+	if err := json.Unmarshal(raw, &utxos); err != nil {
+		return nil, err
+	}
+
+	minRelay := nodeMinRelayFeePerKB()
+	feerate := nodeFeeRatePerKB()
+	if feerate < minRelay {
+		feerate = minRelay
+	}
+
+	amountSat := int64(math.Round(amount * 1e8))
+	var spendable int64
+	for _, u := range utxos {
+		if u.Spendable && u.AmountBaseUnits > 0 {
+			spendable += u.AmountBaseUnits
+		}
+	}
+	if spendable < amountSat {
+		return nil, fmt.Errorf("insufficient spendable balance: available %s LBTC, required %s LBTC",
+			formatLBTC(spendable), formatLBTC(amountSat))
+	}
+
+	fee := minRelay
+	var inputs int
+	var size int64
+	for i := 0; i < 12; i++ {
+		inputs = 0
+		var total int64
+		var inputSize int64
+		for _, u := range utxos {
+			if !u.Spendable || u.AmountBaseUnits <= 0 {
+				continue
+			}
+			inputs++
+			total += u.AmountBaseUnits
+			inputSize += estimateInputSize(u.ScriptPubKey)
+			if total >= amountSat+fee {
+				break
+			}
+		}
+		if inputs == 0 {
+			return nil, fmt.Errorf("source address has no spendable UTXOs")
+		}
+		if total < amountSat+fee {
+			return nil, fmt.Errorf("insufficient spendable balance: available %s LBTC, required %s LBTC",
+				formatLBTC(spendable), formatLBTC(amountSat+fee))
+		}
+		outputs := int64(2)
+		if total == amountSat+fee {
+			outputs = 1
+		}
+		// 10-byte header, 34-byte output, plus a small margin for CompactSize
+		// prefixes and DER signature length variance.
+		size = 10 + inputSize + outputs*34 + 32
+		next := (size*feerate + 999) / 1000
+		minFee := (size*minRelay + 999) / 1000
+		if next < minFee {
+			next = minFee
+		}
+		if next == fee {
+			break
+		}
+		fee = next
+	}
+
+	minFee := (size*minRelay + 999) / 1000
+	return &sendFeeEstimate{
+		Fee:          float64(fee) / 1e8,
+		FeeBaseUnits: fee,
+		MinFee:       float64(minFee) / 1e8,
+		MinFeeUnits:  minFee,
+		FeeRate:      float64(feerate) / 1e8,
+		Inputs:       inputs,
+		Size:         size,
+		Spendable:    float64(spendable) / 1e8,
+		Required:     float64(amountSat+fee) / 1e8,
+	}, nil
+}
+
+func formatLBTC(baseUnits int64) string {
+	return fmt.Sprintf("%.8f", float64(baseUnits)/1e8)
+}
+
+// listWalletBalances returns one row per node wallet. The admin panel used to
+// show only the default wallet, so coins sitting in a named wallet (for
+// example "mainer") looked missing even though the node could see them.
+// getbalance is used instead of getwalletsummary because the summary serializes
+// every UTXO and the panel polls this endpoint regularly.
+func listWalletBalances() []map[string]interface{} {
+	raw, err := rpcCall("listwallets", []interface{}{})
+	if err != nil {
+		return nil
+	}
+	var names []string
+	if err := json.Unmarshal(raw, &names); err != nil {
+		return nil
+	}
+	out := make([]map[string]interface{}, 0, len(names))
+	for _, name := range names {
+		r, err := rpcCallWallet("getbalance", []interface{}{}, name)
+		if err != nil {
+			continue
+		}
+		var balance float64
+		if err := json.Unmarshal(r, &balance); err != nil {
+			continue
+		}
+		out = append(out, map[string]interface{}{
+			"name":    name,
+			"balance": balance,
+		})
+	}
+	return out
 }
 
 func workerWalletInfo() map[string]interface{} {
