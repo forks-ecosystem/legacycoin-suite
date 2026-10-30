@@ -35,6 +35,9 @@ var dashboardHTML string
 //go:embed static/admin.html
 var adminHTML string
 
+//go:embed static/favicon.ico
+var faviconICO []byte
+
 var db *sql.DB
 
 type StratumMessage struct {
@@ -453,6 +456,12 @@ func main() {
 		default:
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		}
+	})
+
+	mux.HandleFunc("/favicon.ico", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "image/x-icon")
+		w.Header().Set("Cache-Control", "public, max-age=86400")
+		w.Write(faviconICO)
 	})
 
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
